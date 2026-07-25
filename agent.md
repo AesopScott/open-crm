@@ -7,7 +7,29 @@ timeline and Clawnify integrations. Preact + Hono + D1.
 
 - `GET/POST/PUT/DELETE /api/contacts` · `/api/companies` · `/api/deals`
 - Contacts belong to companies; deals belong to contacts.
-- `GET /api/stats` — counts + total pipeline value.
+- `GET /api/stats` — counts + total pipeline value (excludes lost deals).
+
+## Pipeline stages (data, not code)
+
+Stages live in the database — `GET /api/stages` is the vocabulary. Defaults:
+`prospect → qualified → proposal → negotiation → won`, plus `lost`. Deal writes
+validate the stage key (400 lists valid keys).
+
+- `POST /api/stages` `{ label, key?, color?, position?, is_won?, is_lost? }` — add a stage.
+- `PUT /api/stages/{key}` — rename, recolor, reorder, or change flags. Key is immutable.
+- `DELETE /api/stages/{key}?reassign_to=<key>` — reassign_to is required when
+  the stage still has deals.
+- **Semantics ride on flags, not names**: moving a deal to an `is_won: 1` stage
+  fires the Slack celebration; `is_lost: 1` stages are excluded from pipeline value.
+
+## Custom fields
+
+Define real, typed columns at runtime: `POST /api/custom-fields`
+`{ entity_type, key, label, field_type, options }` — then write values flat on
+the entity or under `custom`. Unknown fields are rejected loudly (422) with the
+valid-field list. Set `options.required: true` to make a field mandatory —
+create/update then reject (400) when it's missing or being cleared. Bulk import
+stays lenient and does not enforce required.
 
 ## Activity timeline
 
@@ -28,8 +50,8 @@ wired first: `GET /api/integrations/status` → `{ email, meeting, slack }`.
   Creates a Google Calendar event (`googlecalendar`) with the contact and logs it.
   `start_datetime` is local wall-clock, e.g. `2026-07-16T13:00:00`; `timezone` is
   an IANA zone, e.g. `America/New_York`.
-- **Deal-won Slack alert** — when a deal is set to stage `won`, if `SLACK_CHANNEL`
-  is set and Slack is connected, the app posts to that channel automatically.
+- **Deal-won Slack alert** — when a deal moves to a stage with `is_won: 1`, if
+  `SLACK_CHANNEL` is set and Slack is connected, the app posts automatically.
 
 If a capability isn't connected, the endpoint returns an error — tell the user to
 connect it in the Clawnify dashboard; don't try to work around it.

@@ -35,13 +35,13 @@ export function EntityIcon({ name, domain, className }: { name: string; domain?:
 }
 
 /** A quiet, fact-style category badge (status, stage, industry). Color = data. */
-export function CategoryBadge({ value }: { value?: string | null }) {
+export function CategoryBadge({ value, className }: { value?: string | null; className?: string }) {
   if (!value) return <span className="text-muted-foreground">—</span>;
   const c = categoryClasses(value);
   return (
     <span
       title={value}
-      className={cn("inline-block max-w-[12rem] truncate rounded-full border px-2 py-0.5 align-middle text-xs font-normal capitalize", c.bg, c.text, c.border)}
+      className={cn("inline-block max-w-[12rem] truncate rounded-full border px-2 py-0.5 align-middle text-xs font-normal capitalize", c.bg, c.text, c.border, className)}
     >
       {value}
     </span>

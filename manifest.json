@@ -14,6 +14,7 @@
     "src/client/components/contacts/import-contacts.tsx",
     "src/client/components/deals/deal-dialog.tsx",
     "src/client/components/deals/deals-board.tsx",
+    "src/client/components/deals/stage-dialog.tsx",
     "src/client/components/error-banner.tsx",
     "src/client/components/shared.tsx",
     "src/client/components/sidebar.tsx",

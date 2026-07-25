@@ -10,6 +10,7 @@ import {
   deleteDef,
   coerceCustomValue,
   classifyCustomWrite,
+  missingRequiredCustom,
   writableFieldKeys,
   isEntityType,
   type EntityType,
@@ -290,7 +291,7 @@ app.openapi(getStats, async (c) => {
     const contacts = await get<{ count: number }>("SELECT COUNT(*) as count FROM contacts");
     const companies = await get<{ count: number }>("SELECT COUNT(*) as count FROM companies");
     const deals = await get<{ count: number }>("SELECT COUNT(*) as count FROM deals");
-    const dealValue = await get<{ total: number }>("SELECT COALESCE(SUM(value), 0) as total FROM deals WHERE stage NOT IN ('lost')");
+    const dealValue = await get<{ total: number }>("SELECT COALESCE(SUM(value), 0) as total FROM deals WHERE stage NOT IN (SELECT key FROM stages WHERE is_lost = 1)");
     return c.json({
       contacts: contacts?.count || 0,
       companies: companies?.count || 0,
@@ -411,6 +412,8 @@ app.openapi(createCompany, async (c) => {
     const { values: customValues, unknown } = await resolveCustomWrite("company", body as unknown as Record<string, unknown>);
     const unknownErr = await unknownFieldsError("company", unknown);
     if (unknownErr) return c.json(unknownErr, 422);
+    const missingReq = await missingRequiredCustom("company", customValues, "create");
+    if (missingReq.length) return c.json({ error: `Missing required field(s): ${missingReq.join(", ")}` }, 400);
     const name = body.name.trim();
     if (!name) return c.json({ error: "Name is required" }, 400);
 
@@ -467,6 +470,8 @@ app.openapi(updateCompany, async (c) => {
     const { values: customValues, unknown } = await resolveCustomWrite("company", body as unknown as Record<string, unknown>);
     const unknownErr = await unknownFieldsError("company", unknown);
     if (unknownErr) return c.json(unknownErr, 422);
+    const missingReq = await missingRequiredCustom("company", customValues, "update");
+    if (missingReq.length) return c.json({ error: `Missing required field(s): ${missingReq.join(", ")}` }, 400);
     const fields: string[] = [];
     const params: unknown[] = [];
 
@@ -646,6 +651,8 @@ app.openapi(createContact, async (c) => {
     const { values: customValues, unknown } = await resolveCustomWrite("contact", body as unknown as Record<string, unknown>);
     const unknownErr = await unknownFieldsError("contact", unknown);
     if (unknownErr) return c.json(unknownErr, 422);
+    const missingReq = await missingRequiredCustom("contact", customValues, "create");
+    if (missingReq.length) return c.json({ error: `Missing required field(s): ${missingReq.join(", ")}` }, 400);
     const firstName = body.first_name.trim();
     if (!firstName) return c.json({ error: "First name is required" }, 400);
 
@@ -717,6 +724,8 @@ app.openapi(updateContact, async (c) => {
     const { values: customValues, unknown } = await resolveCustomWrite("contact", body as unknown as Record<string, unknown>);
     const unknownErr = await unknownFieldsError("contact", unknown);
     if (unknownErr) return c.json(unknownErr, 422);
+    const missingReq = await missingRequiredCustom("contact", customValues, "update");
+    if (missingReq.length) return c.json({ error: `Missing required field(s): ${missingReq.join(", ")}` }, 400);
     const fields: string[] = [];
     const params: unknown[] = [];
 
@@ -783,6 +792,257 @@ app.openapi(deleteContact, async (c) => {
   }
 });
 
+// ── Stages (the pipeline vocabulary — data, not code) ──────────────
+// `key` is immutable and stored on deals.stage. Behavior hangs on the
+// semantic flags, never on names: is_won → celebrate + Slack notify,
+// is_lost → excluded from pipeline value.
+
+const StageSchema = z.object({
+  key: z.string(),
+  label: z.string(),
+  color: z.string().openapi({ description: "Palette token: sky, emerald, amber, rose, violet, fuchsia, teal, orange, slate" }),
+  position: z.number().int(),
+  is_won: z.number().int().openapi({ description: "1 = a deal here counts as won (fires the Slack alert)" }),
+  is_lost: z.number().int().openapi({ description: "1 = a deal here counts as lost (excluded from pipeline value)" }),
+  created_at: z.string(),
+  updated_at: z.string(),
+}).openapi("Stage");
+
+type StageRow = z.infer<typeof StageSchema>;
+
+const STAGE_COLORS = ["sky", "emerald", "amber", "rose", "violet", "fuchsia", "teal", "orange", "slate"];
+const STAGE_KEY_RE = /^[a-z][a-z0-9_]*$/;
+
+// Default sales pipeline — seeded only when the table is empty, so re-deploys
+// never resurrect a stage the user renamed or deleted.
+const DEFAULT_STAGES: Array<[string, string, string, number, number, number]> = [
+  ["prospect", "Prospect", "slate", 0, 0, 0],
+  ["qualified", "Qualified", "sky", 1, 0, 0],
+  ["proposal", "Proposal", "violet", 2, 0, 0],
+  ["negotiation", "Negotiation", "amber", 3, 0, 0],
+  ["won", "Won", "emerald", 4, 1, 0],
+  ["lost", "Lost", "rose", 5, 0, 1],
+];
+
+let stagesSeeded = false; // per-isolate fast path; the COUNT re-check is cheap
+
+async function ensureStagesSeeded(): Promise<void> {
+  if (stagesSeeded) return;
+  const row = await get<{ count: number }>("SELECT COUNT(*) as count FROM stages");
+  if ((row?.count ?? 0) === 0) {
+    for (const s of DEFAULT_STAGES) {
+      await run("INSERT OR IGNORE INTO stages (key, label, color, position, is_won, is_lost) VALUES (?, ?, ?, ?, ?, ?)", s);
+    }
+  }
+  stagesSeeded = true;
+}
+
+const listStagesRows = async () => {
+  await ensureStagesSeeded();
+  return query<StageRow>("SELECT * FROM stages ORDER BY position, key");
+};
+
+/** Look up one stage (seeding the defaults first if the table is empty). */
+async function getStageRow(key: string): Promise<StageRow | undefined> {
+  await ensureStagesSeeded();
+  return get<StageRow>("SELECT * FROM stages WHERE key = ?", [key]);
+}
+
+/** 400 body for an unknown stage key on a deal write. */
+async function unknownStageError(key: string): Promise<{ error: string }> {
+  const valid = (await listStagesRows()).map((s) => s.key).join(", ");
+  return { error: `Unknown stage "${key}". Valid stages: ${valid}. Create it first via POST /api/stages.` };
+}
+
+const listStages = createRoute({
+  method: "get",
+  path: "/api/stages",
+  tags: ["Stages"],
+  summary: "List pipeline stages in order",
+  responses: {
+    200: { description: "Stages", content: { "application/json": { schema: z.object({ stages: z.array(StageSchema) }) } } },
+    500: { description: "Server error", content: { "application/json": { schema: ErrorSchema } } },
+  },
+});
+
+app.openapi(listStages, async (c) => {
+  try {
+    return c.json({ stages: await listStagesRows() }, 200);
+  } catch (err: unknown) {
+    return c.json({ error: (err as Error).message }, 500);
+  }
+});
+
+const createStage = createRoute({
+  method: "post",
+  path: "/api/stages",
+  tags: ["Stages"],
+  summary: "Create a pipeline stage",
+  request: {
+    body: {
+      required: true,
+      content: { "application/json": { schema: z.object({
+        label: z.string().min(1),
+        key: z.string().optional().openapi({ description: "Immutable identifier; derived from the label when omitted" }),
+        color: z.string().optional(),
+        position: z.number().int().optional().openapi({ description: "Defaults to the end of the pipeline" }),
+        is_won: z.boolean().optional(),
+        is_lost: z.boolean().optional(),
+      }) } },
+    },
+  },
+  responses: {
+    201: { description: "Created stage", content: { "application/json": { schema: z.object({ stage: StageSchema }) } } },
+    400: { description: "Validation error", content: { "application/json": { schema: ErrorSchema } } },
+    409: { description: "Key already exists", content: { "application/json": { schema: ErrorSchema } } },
+    500: { description: "Server error", content: { "application/json": { schema: ErrorSchema } } },
+  },
+});
+
+app.openapi(createStage, async (c) => {
+  try {
+    const body = c.req.valid("json");
+    const label = body.label.trim();
+    if (!label) return c.json({ error: "Label is required" }, 400);
+    const key = (body.key || label.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "")).trim();
+    if (!STAGE_KEY_RE.test(key)) {
+      return c.json({ error: `Invalid stage key "${key}" — use lowercase letters, digits, and underscores (must start with a letter).` }, 400);
+    }
+    if (body.is_won && body.is_lost) return c.json({ error: "A stage cannot be both won and lost" }, 400);
+    const exists = await getStageRow(key);
+    if (exists) return c.json({ error: `Stage "${key}" already exists` }, 409);
+
+    const color = STAGE_COLORS.includes((body.color || "").trim()) ? (body.color as string).trim() : "slate";
+    let position = body.position;
+    if (position === undefined) {
+      const max = await get<{ m: number }>("SELECT COALESCE(MAX(position), -1) as m FROM stages");
+      position = (max?.m ?? -1) + 1;
+    }
+    await run(
+      "INSERT INTO stages (key, label, color, position, is_won, is_lost) VALUES (?, ?, ?, ?, ?, ?)",
+      [key, label, color, position, body.is_won ? 1 : 0, body.is_lost ? 1 : 0],
+    );
+    const inserted = await get<StageRow>("SELECT * FROM stages WHERE key = ?", [key]);
+    return c.json({ stage: inserted! }, 201);
+  } catch (err: unknown) {
+    return c.json({ error: (err as Error).message }, 500);
+  }
+});
+
+const updateStage = createRoute({
+  method: "put",
+  path: "/api/stages/{key}",
+  tags: ["Stages"],
+  summary: "Update a stage's label, color, position, or semantic flags (key is immutable)",
+  request: {
+    params: z.object({ key: z.string() }),
+    body: {
+      required: true,
+      content: { "application/json": { schema: z.object({
+        label: z.string().optional(),
+        color: z.string().optional(),
+        position: z.number().int().optional(),
+        is_won: z.boolean().optional(),
+        is_lost: z.boolean().optional(),
+      }) } },
+    },
+  },
+  responses: {
+    200: { description: "Updated stage", content: { "application/json": { schema: z.object({ stage: StageSchema }) } } },
+    400: { description: "Validation error", content: { "application/json": { schema: ErrorSchema } } },
+    404: { description: "Not found", content: { "application/json": { schema: ErrorSchema } } },
+    500: { description: "Server error", content: { "application/json": { schema: ErrorSchema } } },
+  },
+});
+
+app.openapi(updateStage, async (c) => {
+  try {
+    const { key } = c.req.valid("param");
+    const body = c.req.valid("json");
+    const existing = await getStageRow(key);
+    if (!existing) return c.json({ error: "Stage not found" }, 404);
+
+    const is_won = body.is_won === undefined ? existing.is_won === 1 : body.is_won;
+    const is_lost = body.is_lost === undefined ? existing.is_lost === 1 : body.is_lost;
+    if (is_won && is_lost) return c.json({ error: "A stage cannot be both won and lost" }, 400);
+
+    const fields: string[] = [];
+    const params: unknown[] = [];
+    if (body.label !== undefined) {
+      const label = body.label.trim();
+      if (!label) return c.json({ error: "Label cannot be empty" }, 400);
+      fields.push("label = ?"); params.push(label);
+    }
+    if (body.color !== undefined) {
+      if (!STAGE_COLORS.includes(body.color.trim())) {
+        return c.json({ error: `Unknown color "${body.color}". Valid: ${STAGE_COLORS.join(", ")}` }, 400);
+      }
+      fields.push("color = ?"); params.push(body.color.trim());
+    }
+    if (body.position !== undefined) { fields.push("position = ?"); params.push(body.position); }
+    if (body.is_won !== undefined) { fields.push("is_won = ?"); params.push(body.is_won ? 1 : 0); }
+    if (body.is_lost !== undefined) { fields.push("is_lost = ?"); params.push(body.is_lost ? 1 : 0); }
+    if (fields.length === 0) return c.json({ error: "No fields to update" }, 400);
+
+    fields.push("updated_at = datetime('now')");
+    params.push(key);
+    await run("UPDATE stages SET " + fields.join(", ") + " WHERE key = ?", params);
+    const updated = await get<StageRow>("SELECT * FROM stages WHERE key = ?", [key]);
+    return c.json({ stage: updated! }, 200);
+  } catch (err: unknown) {
+    return c.json({ error: (err as Error).message }, 500);
+  }
+});
+
+const deleteStage = createRoute({
+  method: "delete",
+  path: "/api/stages/{key}",
+  tags: ["Stages"],
+  summary: "Delete a stage; deals in it must be reassigned via ?reassign_to=<stage key>",
+  request: {
+    params: z.object({ key: z.string() }),
+    query: z.object({
+      reassign_to: z.string().optional().openapi({ description: "Stage key to move this stage's deals to (required when the stage has deals)" }),
+    }),
+  },
+  responses: {
+    200: { description: "Success", content: { "application/json": { schema: z.object({ ok: z.boolean(), reassigned: z.number().int() }) } } },
+    400: { description: "Validation error", content: { "application/json": { schema: ErrorSchema } } },
+    404: { description: "Not found", content: { "application/json": { schema: ErrorSchema } } },
+    409: { description: "Stage has deals and no reassign_to was given", content: { "application/json": { schema: ErrorSchema } } },
+    500: { description: "Server error", content: { "application/json": { schema: ErrorSchema } } },
+  },
+});
+
+app.openapi(deleteStage, async (c) => {
+  try {
+    const { key } = c.req.valid("param");
+    const { reassign_to } = c.req.valid("query");
+    const existing = await getStageRow(key);
+    if (!existing) return c.json({ error: "Stage not found" }, 404);
+    const total = await get<{ count: number }>("SELECT COUNT(*) as count FROM stages");
+    if ((total?.count ?? 0) <= 1) return c.json({ error: "Cannot delete the last stage" }, 400);
+
+    const inStage = await get<{ count: number }>("SELECT COUNT(*) as count FROM deals WHERE stage = ?", [key]);
+    let reassigned = 0;
+    if ((inStage?.count ?? 0) > 0) {
+      const target = (reassign_to || "").trim();
+      if (!target) {
+        return c.json({ error: `Stage has ${inStage!.count} deal(s). Pass ?reassign_to=<stage key> to move them first.` }, 409);
+      }
+      if (target === key) return c.json({ error: "reassign_to must be a different stage" }, 400);
+      const targetRow = await getStageRow(target);
+      if (!targetRow) return c.json(await unknownStageError(target), 400);
+      const res = await run("UPDATE deals SET stage = ?, updated_at = datetime('now') WHERE stage = ?", [target, key]);
+      reassigned = res.changes ?? 0;
+    }
+    await run("DELETE FROM stages WHERE key = ?", [key]);
+    return c.json({ ok: true, reassigned }, 200);
+  } catch (err: unknown) {
+    return c.json({ error: (err as Error).message }, 500);
+  }
+});
+
 // ── Deals ──────────────────────────────────────────────────────────
 
 const getDealsBoard = createRoute({
@@ -820,7 +1080,7 @@ const listDeals = createRoute({
   summary: "List deals with pagination, search, and filtering",
   request: {
     query: PaginationQuery.extend({
-      stage: z.string().optional().openapi({ description: "Filter by stage (prospect, qualified, proposal, negotiation, won, lost)" }),
+      stage: z.string().optional().openapi({ description: "Filter by stage key (see GET /api/stages for the pipeline vocabulary)" }),
       contact_id: z.string().optional().openapi({ description: "Filter by contact ID" }),
     }),
   },
@@ -935,16 +1195,28 @@ app.openapi(createDeal, async (c) => {
     const { values: customValues, unknown } = await resolveCustomWrite("deal", body as unknown as Record<string, unknown>);
     const unknownErr = await unknownFieldsError("deal", unknown);
     if (unknownErr) return c.json(unknownErr, 422);
+    const missingReq = await missingRequiredCustom("deal", customValues, "create");
+    if (missingReq.length) return c.json({ error: `Missing required field(s): ${missingReq.join(", ")}` }, 400);
     const name = body.name.trim();
     if (!name) return c.json({ error: "Name is required" }, 400);
 
     const contactId = body.contact_id ? String(body.contact_id) : null;
     const value = parseFloat(String(body.value)) || 0;
 
+    // Stage must exist; default is the first stage of the pipeline.
+    let stageKey = (body.stage || "").trim();
+    if (stageKey) {
+      const ok = await getStageRow(stageKey);
+      if (!ok) return c.json(await unknownStageError(stageKey), 400);
+    } else {
+      const all = await listStagesRows();
+      stageKey = all[0]?.key ?? "prospect";
+    }
+
     const id = crypto.randomUUID();
     await run(
       "INSERT INTO deals (id, name, contact_id, value, stage, close_date, notes) VALUES (?, ?, ?, ?, ?, ?, ?)",
-      [id, name, contactId, value, (body.stage || "prospect").trim(), (body.close_date || "").trim(), (body.notes || "").trim()],
+      [id, name, contactId, value, stageKey, (body.close_date || "").trim(), (body.notes || "").trim()],
     );
 
     await applyCustomValues("deal", "deals", id, customValues);
@@ -1002,6 +1274,13 @@ app.openapi(updateDeal, async (c) => {
     const { values: customValues, unknown } = await resolveCustomWrite("deal", body as unknown as Record<string, unknown>);
     const unknownErr = await unknownFieldsError("deal", unknown);
     if (unknownErr) return c.json(unknownErr, 422);
+    const missingReq = await missingRequiredCustom("deal", customValues, "update");
+    if (missingReq.length) return c.json({ error: `Missing required field(s): ${missingReq.join(", ")}` }, 400);
+    if (body.stage !== undefined) {
+      const stageKey = String(body.stage).trim();
+      const ok = await getStageRow(stageKey);
+      if (!ok) return c.json(await unknownStageError(stageKey), 400);
+    }
     const fields: string[] = [];
     const params: unknown[] = [];
 
@@ -1045,19 +1324,28 @@ app.openapi(updateDeal, async (c) => {
 
     // Deal just marked won → log it and notify Slack (best-effort, never blocks
     // the update). Fires only when this request set stage='won'.
-    if (body.stage === "won" && updated) {
-      const value = Number(updated.value) || 0;
-      await logActivity("deal", id, "stage_change", `Deal marked won`, { stage: "won", value });
-      const channel = c.env.SLACK_CHANNEL?.trim();
-      if (channel) {
-        const contact = [updated.contact_first_name, updated.contact_last_name].filter(Boolean).join(" ");
-        const text = `🎉 *Deal won:* ${updated.name} — $${value.toLocaleString()}${contact ? ` (${contact})` : ""}`;
-        try {
-          await notifySlack(c.env, { channel, text });
-          await logActivity("deal", id, "slack", `Notified #${channel} of the win`, { channel });
-        } catch {
-          /* Slack not connected / channel missing — the win is still recorded */
+    // Stage semantics fire on the stage's FLAGS, never its name — so they work
+    // with any vocabulary the user edits the pipeline into. Only when this
+    // request actually set the stage (best-effort, never blocks the update).
+    if (body.stage !== undefined && updated) {
+      const st = await getStageRow(String(body.stage).trim());
+      if (st?.is_won) {
+        const value = Number(updated.value) || 0;
+        await logActivity("deal", id, "stage_change", `Deal won — ${st.label}`, { stage: body.stage, value });
+        const channel = c.env.SLACK_CHANNEL?.trim();
+        if (channel) {
+          const contact = [updated.contact_first_name, updated.contact_last_name].filter(Boolean).join(" ");
+          const text = `🎉 *Deal won:* ${updated.name} — $${value.toLocaleString()}${contact ? ` (${contact})` : ""}`;
+          try {
+            await notifySlack(c.env, { channel, text });
+            await logActivity("deal", id, "slack", `Notified #${channel} of the win`, { channel });
+          } catch {
+            /* Slack not connected / channel missing — the win is still recorded */
+          }
         }
+      }
+      if (st?.is_lost) {
+        await logActivity("deal", id, "stage_change", `Deal lost — ${st.label}`, { stage: body.stage });
       }
     }
     return c.json({ deal: updated }, 200);
