@@ -18,8 +18,6 @@ import { api } from "@/api";
 import { CustomFieldsSection, readCustom } from "@/lib/custom-fields";
 import type { Deal } from "@/types";
 
-const STAGES = ["prospect", "qualified", "proposal", "negotiation", "won", "lost"] as const;
-
 // Radix Select forbids an empty-string item value, so we use a sentinel for the
 // "None" contact option and map it back to null on submit.
 const NO_CONTACT = "__none__";
@@ -33,12 +31,12 @@ interface FormState {
   notes: string;
 }
 
-function toForm(deal?: Deal): FormState {
+function toForm(deal: Deal | undefined, defaultStage: string): FormState {
   return {
     name: deal?.name ?? "",
     contact_id: deal?.contact_id ?? "",
     value: deal?.value != null ? String(deal.value) : "",
-    stage: deal?.stage || "prospect",
+    stage: deal?.stage || defaultStage,
     close_date: deal?.close_date ?? "",
     notes: deal?.notes ?? "",
   };
@@ -53,16 +51,16 @@ export function DealDialog({
   onOpenChange: (open: boolean) => void;
   deal?: Deal;
 }) {
-  const { addDeal, updateDeal, setError, customFields } = useCrm();
+  const { addDeal, updateDeal, setError, customFields, stages } = useCrm();
   const dealFields = customFields.filter((d) => d.entity_type === "deal");
-  const [form, setForm] = useState<FormState>(() => toForm(deal));
+  const [form, setForm] = useState<FormState>(() => toForm(deal, stages[0]?.key ?? ""));
   const [custom, setCustom] = useState<Record<string, unknown>>({});
   const [saving, setSaving] = useState(false);
 
   // Reset the form each time the dialog opens (create vs edit).
   useEffect(() => {
     if (open) {
-      setForm(toForm(deal));
+      setForm(toForm(deal, stages[0]?.key ?? ""));
       setCustom(Object.fromEntries(dealFields.map((d) => [d.key, readCustom(deal, d.key) ?? ""])));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -151,9 +149,9 @@ export function DealDialog({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {STAGES.map((s) => (
-                    <SelectItem key={s} value={s} className="capitalize">
-                      {s}
+                  {stages.map((s) => (
+                    <SelectItem key={s.key} value={s.key}>
+                      {s.label}
                     </SelectItem>
                   ))}
                 </SelectContent>
