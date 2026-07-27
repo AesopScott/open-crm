@@ -21,10 +21,10 @@ export function Sidebar({ route, navigate }: { route: Route; navigate: (to: stri
   return (
     <aside className="flex w-[260px] shrink-0 flex-col border-r border-sidebar-border bg-sidebar">
       <div className="flex items-center gap-2.5 border-b border-sidebar-border px-5 py-4">
-        <div className="flex size-7 items-center justify-center rounded-md bg-primary text-primary-foreground">
+        <div className="flex size-7 items-center justify-center rounded-md bg-[linear-gradient(135deg,#1666ff,#00e6ff)] text-[#0a0f1e] shadow-[0_0_22px_rgba(0,230,255,0.22)]">
           <Users className="size-4" />
         </div>
-        <span className="text-base font-bold tracking-tight text-sidebar-foreground">CRM</span>
+        <span className="text-base font-bold tracking-[0.18em] text-sidebar-foreground">CRM</span>
       </div>
 
       <nav className="flex flex-1 flex-col gap-0.5 p-3">

@@ -5,17 +5,17 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-/** Map a color token (e.g. "sky") to a set of Tailwind classes for a card / badge surface. */
+/** Map data color tokens to Mojo-branded card / badge surfaces. */
 export const colorPalette = {
-  sky:     { bg: "bg-sky-100",     border: "border-sky-300",     text: "text-sky-900",     ring: "ring-sky-400",     dot: "bg-sky-500" },
-  emerald: { bg: "bg-emerald-100", border: "border-emerald-300", text: "text-emerald-900", ring: "ring-emerald-400", dot: "bg-emerald-500" },
-  amber:   { bg: "bg-amber-100",   border: "border-amber-300",   text: "text-amber-900",   ring: "ring-amber-400",   dot: "bg-amber-500" },
-  rose:    { bg: "bg-rose-100",    border: "border-rose-300",    text: "text-rose-900",    ring: "ring-rose-400",    dot: "bg-rose-500" },
-  violet:  { bg: "bg-violet-100",  border: "border-violet-300",  text: "text-violet-900",  ring: "ring-violet-400",  dot: "bg-violet-500" },
-  fuchsia: { bg: "bg-fuchsia-100", border: "border-fuchsia-300", text: "text-fuchsia-900", ring: "ring-fuchsia-400", dot: "bg-fuchsia-500" },
-  teal:    { bg: "bg-teal-100",    border: "border-teal-300",    text: "text-teal-900",    ring: "ring-teal-400",    dot: "bg-teal-500" },
-  orange:  { bg: "bg-orange-100",  border: "border-orange-300",  text: "text-orange-900",  ring: "ring-orange-400",  dot: "bg-orange-500" },
-  slate:   { bg: "bg-slate-100",   border: "border-slate-300",   text: "text-slate-900",   ring: "ring-slate-400",   dot: "bg-slate-500" },
+  sky:     { bg: "bg-[#10295c]", border: "border-[#1666ff]/55", text: "text-[#d7e7ff]", ring: "ring-[#1666ff]", dot: "bg-[#1666ff]" },
+  emerald: { bg: "bg-[#063b47]", border: "border-[#00e6ff]/55", text: "text-[#c9fbff]", ring: "ring-[#00e6ff]", dot: "bg-[#00e6ff]" },
+  amber:   { bg: "bg-[#162d50]", border: "border-[#6da6ff]/55", text: "text-[#d7e7ff]", ring: "ring-[#6da6ff]", dot: "bg-[#6da6ff]" },
+  rose:    { bg: "bg-[#332238]", border: "border-[#00e6ff]/40", text: "text-[#dffcff]", ring: "ring-[#00e6ff]", dot: "bg-[#00e6ff]" },
+  violet:  { bg: "bg-[#12245c]", border: "border-[#1666ff]/45", text: "text-[#d7e7ff]", ring: "ring-[#1666ff]", dot: "bg-[#1666ff]" },
+  fuchsia: { bg: "bg-[#073746]", border: "border-[#00e6ff]/45", text: "text-[#c9fbff]", ring: "ring-[#00e6ff]", dot: "bg-[#00e6ff]" },
+  teal:    { bg: "bg-[#063b47]", border: "border-[#00e6ff]/55", text: "text-[#c9fbff]", ring: "ring-[#00e6ff]", dot: "bg-[#00e6ff]" },
+  orange:  { bg: "bg-[#1b2333]", border: "border-[#6da6ff]/45", text: "text-[#d7e7ff]", ring: "ring-[#6da6ff]", dot: "bg-[#6da6ff]" },
+  slate:   { bg: "bg-[#1b2333]", border: "border-white/15", text: "text-white", ring: "ring-white/20", dot: "bg-white" },
 } as const;
 
 export type ColorToken = keyof typeof colorPalette;

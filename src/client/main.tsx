@@ -2,9 +2,9 @@ import { createRoot } from "react-dom/client";
 import { App } from "./app";
 import "./styles.css";
 
-// Default to the light (white) theme — do not follow the OS. A future in-app
-// toggle can add/remove `.dark`; until then the CRM is white by default.
-document.documentElement.classList.remove("dark");
+// Mojo AI Summits is a dark, neon-accented brand. Keep the CRM pinned to that
+// palette instead of following OS theme preferences.
+document.documentElement.classList.add("dark");
 
 // Agent/touch mode enlarges interactive targets (?agent or ?mode=agent).
 const params = new URLSearchParams(window.location.search);
