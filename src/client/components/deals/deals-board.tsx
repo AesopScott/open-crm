@@ -12,10 +12,12 @@ import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuIte
 import { Label } from "@/components/ui/label";
 import { api } from "@/api";
 import { formatMoney, colorClasses, cn } from "@/lib/utils";
+import { pipelineMeta } from "@/lib/pipelines";
 import type { Deal, StageDef } from "@/types";
 
 export function DealsBoard() {
-  const { boardDeals, stats, dealsTotalValue, updateDeal, deleteDeal, stages, refetchStages, refetchBoard, refetchStats, setError, isAgent } = useCrm();
+  const { boardDeals, activePipeline, dealsTotalValue, updateDeal, deleteDeal, stages, refetchStages, refetchBoard, refetchStats, setError, isAgent } = useCrm();
+  const pipeline = pipelineMeta(activePipeline);
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Deal | undefined>(undefined);
@@ -55,7 +57,7 @@ export function DealsBoard() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <PageHeader title="Deals" count={stats.deals}>
+      <PageHeader title={pipeline.dealLabel} count={boardDeals.length}>
         <div className="flex flex-col items-end">
           <div className="eyebrow">Pipeline value</div>
           <span className="tabular text-sm font-semibold">{formatMoney(dealsTotalValue)}</span>
@@ -64,7 +66,7 @@ export function DealsBoard() {
       </PageHeader>
 
       {boardDeals.length === 0 && stages.length === 0 ? (
-        <EmptyState title="No deals yet. Add your first." action={addButton} />
+        <EmptyState title={`No ${pipeline.dealLabel.toLowerCase()} records yet. Add your first.`} action={addButton} />
       ) : (
         <div className="min-h-0 flex-1 overflow-x-auto">
           <div className="flex h-full min-w-max gap-4 p-6">

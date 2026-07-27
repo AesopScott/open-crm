@@ -15,6 +15,7 @@ import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@
 import { Combobox } from "@/components/ui/combobox";
 import { api } from "@/api";
 import { CustomFieldsSection, readCustom } from "@/lib/custom-fields";
+import { PIPELINES, DEFAULT_PIPELINE } from "@/lib/pipelines";
 import type { Contact } from "@/types";
 
 const STATUSES = ["lead", "active", "inactive", "churned"] as const;
@@ -25,6 +26,7 @@ const NO_COMPANY = "__none__";
 
 interface FormState {
   first_name: string;
+  pipeline: string;
   last_name: string;
   email: string;
   phone: string;
@@ -33,9 +35,10 @@ interface FormState {
   status: string;
 }
 
-function toForm(contact?: Contact): FormState {
+function toForm(contact: Contact | undefined, defaultPipeline: string): FormState {
   return {
     first_name: contact?.first_name ?? "",
+    pipeline: contact?.pipeline ?? defaultPipeline,
     last_name: contact?.last_name ?? "",
     email: contact?.email ?? "",
     phone: contact?.phone ?? "",
@@ -54,16 +57,16 @@ export function ContactDialog({
   onOpenChange: (open: boolean) => void;
   contact?: Contact;
 }) {
-  const { addContact, updateContact, setError, customFields } = useCrm();
+  const { addContact, updateContact, setError, customFields, activePipeline } = useCrm();
   const contactFields = customFields.filter((d) => d.entity_type === "contact");
-  const [form, setForm] = useState<FormState>(() => toForm(contact));
+  const [form, setForm] = useState<FormState>(() => toForm(contact, activePipeline ?? DEFAULT_PIPELINE));
   const [custom, setCustom] = useState<Record<string, unknown>>({});
   const [saving, setSaving] = useState(false);
 
   // Reset the form each time the dialog opens (create vs edit).
   useEffect(() => {
     if (open) {
-      setForm(toForm(contact));
+      setForm(toForm(contact, activePipeline));
       setCustom(Object.fromEntries(contactFields.map((d) => [d.key, readCustom(contact, d.key) ?? ""])));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -78,6 +81,7 @@ export function ContactDialog({
     try {
       const data: Partial<Contact> = {
         first_name: form.first_name.trim(),
+        pipeline: form.pipeline as Contact["pipeline"],
         last_name: form.last_name.trim(),
         email: form.email.trim(),
         phone: form.phone.trim(),
@@ -105,6 +109,22 @@ export function ContactDialog({
 
         <form onSubmit={onSubmit} className="flex flex-col gap-4">
           <div className="eyebrow">Contact</div>
+
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="pipeline">Pipeline</Label>
+            <Select value={form.pipeline} onValueChange={(v) => set("pipeline", v)}>
+              <SelectTrigger id="pipeline" className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {PIPELINES.map((p) => (
+                  <SelectItem key={p.key} value={p.key}>
+                    {p.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div className="flex flex-col gap-1.5">

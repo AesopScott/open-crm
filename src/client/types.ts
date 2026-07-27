@@ -1,5 +1,6 @@
 export type View = "contacts" | "companies" | "deals";
 export type EntityType = "contact" | "company" | "deal";
+export type PipelineKey = "vip_registrants" | "vendor_sponsors";
 
 /** Base storage type for a custom property. Widget flavours ride on top. */
 export type AttributeType =
@@ -30,6 +31,7 @@ export interface CustomFieldDef {
 export interface Company {
   id: string;
   name: string;
+  pipeline: PipelineKey;
   domain: string;
   industry: string;
   phone: string;
@@ -44,6 +46,7 @@ export interface Company {
 export interface Contact {
   id: string;
   first_name: string;
+  pipeline: PipelineKey;
   last_name: string;
   email: string;
   phone: string;
@@ -60,6 +63,7 @@ export interface Contact {
 export interface Deal {
   id: string;
   name: string;
+  pipeline: PipelineKey;
   contact_id: string | null;
   value: number;
   stage: string;
@@ -78,6 +82,7 @@ export interface Deal {
  *  deals.stage; behavior hangs on is_won/is_lost, never on names. */
 export interface StageDef {
   key: string;
+  pipeline: PipelineKey;
   label: string;
   color: string; // palette token (sky, emerald, …)
   position: number;

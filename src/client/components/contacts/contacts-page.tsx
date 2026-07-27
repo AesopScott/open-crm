@@ -13,11 +13,13 @@ import { Input } from "@/components/ui/input";
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
+import { pipelineMeta } from "@/lib/pipelines";
 import { CustomFieldDisplay, readCustom } from "@/lib/custom-fields";
 import type { Contact } from "@/types";
 
 export function ContactsPage({ navigate }: { navigate: (to: string) => void }) {
-  const { contacts, contactsPag, stats, setContactsPage, setContactsSort, setContactsSearch, setContactsFilters, deleteContact, customFields } = useCrm();
+  const { contacts, contactsPag, activePipeline, setContactsPage, setContactsSort, setContactsSearch, setContactsFilters, deleteContact, customFields } = useCrm();
+  const pipeline = pipelineMeta(activePipeline);
   const contactFields = customFields.filter((d) => d.entity_type === "contact");
   const filterFields = fieldsFromDefs(
     [
@@ -76,7 +78,7 @@ export function ContactsPage({ navigate }: { navigate: (to: string) => void }) {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <PageHeader title="Contacts" count={stats.contacts}>
+      <PageHeader title={pipeline.label} count={contactsPag.total}>
         <ConnectionsIndicator />
         <div className="relative">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
@@ -98,7 +100,7 @@ export function ContactsPage({ navigate }: { navigate: (to: string) => void }) {
 
       {contacts.length === 0 ? (
         <EmptyState
-          title="No contacts yet. Add your first, or import a CSV."
+          title={`No ${pipeline.contactLabel.toLowerCase()}s yet. Add your first, or import a CSV.`}
           action={
             <div className="flex flex-col items-center gap-2">
               {addButton}

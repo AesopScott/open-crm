@@ -1,5 +1,6 @@
 import { Users, Building2, CircleDollarSign, SlidersHorizontal } from "lucide-react";
 import { useCrm } from "../context";
+import { PIPELINES } from "@/lib/pipelines";
 import { cn } from "../lib/utils";
 import type { Route } from "../hooks/use-router";
 
@@ -14,7 +15,7 @@ const SETTINGS_NAV = [
 ] as const;
 
 export function Sidebar({ route, navigate }: { route: Route; navigate: (to: string) => void }) {
-  const { stats } = useCrm();
+  const { stats, activePipeline, setActivePipeline } = useCrm();
   const counts: Record<string, number> = { contacts: stats.contacts, companies: stats.companies, deals: stats.deals };
   const activeKey = route.name === "contact" ? "contacts" : route.name;
 
@@ -28,6 +29,29 @@ export function Sidebar({ route, navigate }: { route: Route; navigate: (to: stri
       </div>
 
       <nav className="flex flex-1 flex-col gap-0.5 p-3">
+        <div className="eyebrow px-2.5 pb-1.5 pt-2">Pipeline</div>
+        <div className="mb-3 grid gap-1 rounded-md border border-sidebar-border bg-background/35 p-1">
+          {PIPELINES.map((pipeline) => {
+            const active = activePipeline === pipeline.key;
+            return (
+              <button
+                key={pipeline.key}
+                onClick={() => setActivePipeline(pipeline.key)}
+                aria-pressed={active}
+                className={cn(
+                  "flex items-center justify-between gap-2 rounded px-2.5 py-2 text-left text-sm transition-colors",
+                  active
+                    ? "bg-sidebar-accent font-semibold text-sidebar-accent-foreground"
+                    : "text-sidebar-foreground hover:bg-secondary",
+                )}
+              >
+                <span>{pipeline.label}</span>
+                <span className="text-[0.6875rem] uppercase tracking-[0.16em] text-muted-foreground">{pipeline.shortLabel}</span>
+              </button>
+            );
+          })}
+        </div>
+
         <div className="eyebrow px-2.5 pb-1.5 pt-2">Records</div>
         {NAV.map((item) => {
           const active = activeKey === item.key;

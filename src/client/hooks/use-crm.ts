@@ -2,17 +2,18 @@ import { useState, useCallback, useEffect, type Dispatch, type SetStateAction } 
 import { api } from "../api";
 import type {
   Contact, Company, Deal, Stats, PaginatedState, StageDef,
-  Activity, ConnectionStatus, EntityType, CustomFieldDef, ImportRow, ImportEntity, ImportResult,
+  Activity, ConnectionStatus, EntityType, CustomFieldDef, ImportRow, ImportEntity, ImportResult, PipelineKey,
 } from "../types";
 import type { CrmContextValue } from "../context";
+import { DEFAULT_PIPELINE } from "@/lib/pipelines";
 
 const defaultPag = (sort: string): PaginatedState => ({
   page: 1, limit: 25, total: 0, sort, order: "desc", search: "", filters: [],
 });
 
-function pagParams(pag: PaginatedState): URLSearchParams {
+function pagParams(pag: PaginatedState, pipeline: PipelineKey): URLSearchParams {
   const p = new URLSearchParams({
-    page: String(pag.page), limit: String(pag.limit), sort: pag.sort, order: pag.order,
+    page: String(pag.page), limit: String(pag.limit), sort: pag.sort, order: pag.order, pipeline,
   });
   if (pag.search) p.set("search", pag.search);
   if (pag.filters.length) p.set("filters", JSON.stringify(pag.filters));
@@ -21,6 +22,7 @@ function pagParams(pag: PaginatedState): URLSearchParams {
 
 export function useCrmState(isAgent: boolean): CrmContextValue {
   const [stats, setStats] = useState<Stats>({ contacts: 0, companies: 0, deals: 0, dealValue: 0 });
+  const [activePipeline, setActivePipeline] = useState<PipelineKey>(DEFAULT_PIPELINE);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -46,28 +48,28 @@ export function useCrmState(isAgent: boolean): CrmContextValue {
   }, []);
 
   const fetchContacts = useCallback(async (pag: PaginatedState) => {
-    const data = await api<{ contacts: Contact[]; total: number }>("GET", `/api/contacts?${pagParams(pag)}`);
+    const data = await api<{ contacts: Contact[]; total: number }>("GET", `/api/contacts?${pagParams(pag, activePipeline)}`);
     setContacts(data.contacts);
     setContactsPag((prev) => ({ ...prev, total: data.total }));
-  }, []);
+  }, [activePipeline]);
 
   const fetchCompanies = useCallback(async (pag: PaginatedState) => {
-    const data = await api<{ companies: Company[]; total: number }>("GET", `/api/companies?${pagParams(pag)}`);
+    const data = await api<{ companies: Company[]; total: number }>("GET", `/api/companies?${pagParams(pag, activePipeline)}`);
     setCompanies(data.companies);
     setCompaniesPag((prev) => ({ ...prev, total: data.total }));
-  }, []);
+  }, [activePipeline]);
 
   const fetchDeals = useCallback(async (pag: PaginatedState) => {
-    const data = await api<{ deals: Deal[]; total: number; totalValue: number }>("GET", `/api/deals?${pagParams(pag)}`);
+    const data = await api<{ deals: Deal[]; total: number; totalValue: number }>("GET", `/api/deals?${pagParams(pag, activePipeline)}`);
     setDeals(data.deals);
     setDealsPag((prev) => ({ ...prev, total: data.total }));
     setDealsTotalValue(data.totalValue);
-  }, []);
+  }, [activePipeline]);
 
   const fetchBoardDeals = useCallback(async () => {
-    const data = await api<{ deals: Deal[] }>("GET", "/api/deals/board");
+    const data = await api<{ deals: Deal[] }>("GET", `/api/deals/board?pipeline=${activePipeline}`);
     setBoardDeals(data.deals);
-  }, []);
+  }, [activePipeline]);
 
   const fetchConnections = useCallback(async () => {
     try {
@@ -83,9 +85,9 @@ export function useCrmState(isAgent: boolean): CrmContextValue {
   }, []);
 
   const refetchStages = useCallback(async () => {
-    const data = await api<{ stages: StageDef[] }>("GET", "/api/stages");
+    const data = await api<{ stages: StageDef[] }>("GET", `/api/stages?pipeline=${activePipeline}`);
     setStages(data.stages);
-  }, []);
+  }, [activePipeline]);
 
   // ── Initial load ──
 
@@ -111,13 +113,18 @@ export function useCrmState(isAgent: boolean): CrmContextValue {
 
   useEffect(() => { fetchContacts(contactsPag).catch((e) => setError((e as Error).message)); },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [contactsPag.page, contactsPag.sort, contactsPag.order, contactsPag.search, JSON.stringify(contactsPag.filters)]);
+    [activePipeline, contactsPag.page, contactsPag.sort, contactsPag.order, contactsPag.search, JSON.stringify(contactsPag.filters)]);
   useEffect(() => { fetchCompanies(companiesPag).catch((e) => setError((e as Error).message)); },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [companiesPag.page, companiesPag.sort, companiesPag.order, companiesPag.search, JSON.stringify(companiesPag.filters)]);
+    [activePipeline, companiesPag.page, companiesPag.sort, companiesPag.order, companiesPag.search, JSON.stringify(companiesPag.filters)]);
   useEffect(() => { fetchDeals(dealsPag).catch((e) => setError((e as Error).message)); },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [dealsPag.page, dealsPag.sort, dealsPag.order, dealsPag.search]);
+    [activePipeline, dealsPag.page, dealsPag.sort, dealsPag.order, dealsPag.search]);
+
+  useEffect(() => {
+    fetchBoardDeals().catch((e) => setError((e as Error).message));
+    refetchStages().catch((e) => setError((e as Error).message));
+  }, [activePipeline, fetchBoardDeals, refetchStages]);
 
   // ── Pagination setters ──
 
@@ -134,9 +141,9 @@ export function useCrmState(isAgent: boolean): CrmContextValue {
   // ── Contacts CRUD ──
 
   const addContact = useCallback(async (data: Partial<Contact>) => {
-    await api("POST", "/api/contacts", data);
+    await api("POST", "/api/contacts", { pipeline: activePipeline, ...data });
     await Promise.all([fetchContacts(contactsPag), fetchStats()]);
-  }, [contactsPag, fetchContacts, fetchStats]);
+  }, [activePipeline, contactsPag, fetchContacts, fetchStats]);
 
   const updateContact = useCallback(async (id: string, data: Partial<Contact>) => {
     await api("PUT", `/api/contacts/${id}`, data);
@@ -160,9 +167,9 @@ export function useCrmState(isAgent: boolean): CrmContextValue {
   // ── Companies CRUD ──
 
   const addCompany = useCallback(async (data: Partial<Company>) => {
-    await api("POST", "/api/companies", data);
+    await api("POST", "/api/companies", { pipeline: activePipeline, ...data });
     await Promise.all([fetchCompanies(companiesPag), fetchStats()]);
-  }, [companiesPag, fetchCompanies, fetchStats]);
+  }, [activePipeline, companiesPag, fetchCompanies, fetchStats]);
 
   const updateCompany = useCallback(async (id: string, data: Partial<Company>) => {
     await api("PUT", `/api/companies/${id}`, data);
@@ -177,9 +184,9 @@ export function useCrmState(isAgent: boolean): CrmContextValue {
   // ── Deals CRUD ──
 
   const addDeal = useCallback(async (data: Partial<Deal>) => {
-    await api("POST", "/api/deals", data);
+    await api("POST", "/api/deals", { pipeline: activePipeline, ...data });
     await Promise.all([fetchDeals(dealsPag), fetchBoardDeals(), fetchStats()]);
-  }, [dealsPag, fetchDeals, fetchBoardDeals, fetchStats]);
+  }, [activePipeline, dealsPag, fetchDeals, fetchBoardDeals, fetchStats]);
 
   const updateDeal = useCallback(async (id: string, data: Partial<Deal>) => {
     await api("PUT", `/api/deals/${id}`, data);
@@ -218,22 +225,23 @@ export function useCrmState(isAgent: boolean): CrmContextValue {
   const importEntity = useCallback(
     async (entity: ImportEntity, rows: ImportRow[], opts?: { inferCompanyFromEmail?: boolean }): Promise<ImportResult> => {
       if (entity === "company") {
-        const res = await api<ImportResult>("POST", "/api/companies/import", { companies: rows });
+        const res = await api<ImportResult>("POST", "/api/companies/import", { companies: rows, pipeline: activePipeline });
         await Promise.all([fetchCompanies(companiesPag), fetchStats()]);
         return res;
       }
       const res = await api<ImportResult>("POST", "/api/contacts/import", {
         contacts: rows,
+        pipeline: activePipeline,
         inferCompanyFromEmail: opts?.inferCompanyFromEmail ?? false,
       });
       await Promise.all([fetchContacts(contactsPag), fetchStats()]);
       return res;
     },
-    [contactsPag, companiesPag, fetchContacts, fetchCompanies, fetchStats],
+    [activePipeline, contactsPag, companiesPag, fetchContacts, fetchCompanies, fetchStats],
   );
 
   return {
-    isAgent, stats,
+    isAgent, activePipeline, setActivePipeline, stats,
     contacts, contactsPag, setContactsPage: cSet.setPage, setContactsSort: cSet.setSort, setContactsSearch: cSet.setSearch, setContactsFilters: cSet.setFilters,
     addContact, updateContact, deleteContact, fetchContact,
     companies, companiesPag, setCompaniesPage: coSet.setPage, setCompaniesSort: coSet.setSort, setCompaniesSearch: coSet.setSearch, setCompaniesFilters: coSet.setFilters,

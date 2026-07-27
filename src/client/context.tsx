@@ -1,8 +1,10 @@
 import { createContext, useContext } from "react";
-import type { View, Contact, Company, Deal, Stats, PaginatedState, StageDef, Activity, ConnectionStatus, EntityType, CustomFieldDef, ImportRow, ImportEntity, ImportResult } from "./types";
+import type { View, Contact, Company, Deal, Stats, PaginatedState, StageDef, Activity, ConnectionStatus, EntityType, CustomFieldDef, ImportRow, ImportEntity, ImportResult, PipelineKey } from "./types";
 
 export interface CrmContextValue {
   isAgent: boolean;
+  activePipeline: PipelineKey;
+  setActivePipeline: (pipeline: PipelineKey) => void;
   stats: Stats;
 
   // Contacts

@@ -12,11 +12,13 @@ import { Input } from "@/components/ui/input";
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
+import { pipelineMeta } from "@/lib/pipelines";
 import { CustomFieldDisplay, readCustom } from "@/lib/custom-fields";
 import type { Company } from "@/types";
 
 export function CompaniesPage() {
-  const { companies, companiesPag, stats, setCompaniesPage, setCompaniesSort, setCompaniesSearch, setCompaniesFilters, deleteCompany, customFields } = useCrm();
+  const { companies, companiesPag, activePipeline, setCompaniesPage, setCompaniesSort, setCompaniesSearch, setCompaniesFilters, deleteCompany, customFields } = useCrm();
+  const pipeline = pipelineMeta(activePipeline);
   const companyFields = customFields.filter((d) => d.entity_type === "company");
   const filterFields = fieldsFromDefs(
     [
@@ -74,7 +76,7 @@ export function CompaniesPage() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <PageHeader title="Companies" count={stats.companies}>
+      <PageHeader title={pipeline.companyLabel} count={companiesPag.total}>
         <div className="relative">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
           <Input
@@ -94,7 +96,7 @@ export function CompaniesPage() {
       </PageHeader>
 
       {companies.length === 0 ? (
-        <EmptyState title="No companies yet. Add your first." action={addButton} />
+        <EmptyState title={`No ${pipeline.companyLabel.toLowerCase()} yet. Add your first.`} action={addButton} />
       ) : (
         <div className="flex min-h-0 flex-1 flex-col">
           <div className="min-h-0 flex-1 overflow-auto">

@@ -16,6 +16,7 @@ import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@
 import { Combobox } from "@/components/ui/combobox";
 import { api } from "@/api";
 import { CustomFieldsSection, readCustom } from "@/lib/custom-fields";
+import { pipelineLabel } from "@/lib/pipelines";
 import type { Deal } from "@/types";
 
 // Radix Select forbids an empty-string item value, so we use a sentinel for the
@@ -51,7 +52,7 @@ export function DealDialog({
   onOpenChange: (open: boolean) => void;
   deal?: Deal;
 }) {
-  const { addDeal, updateDeal, setError, customFields, stages } = useCrm();
+  const { addDeal, updateDeal, setError, customFields, stages, activePipeline } = useCrm();
   const dealFields = customFields.filter((d) => d.entity_type === "deal");
   const [form, setForm] = useState<FormState>(() => toForm(deal, stages[0]?.key ?? ""));
   const [custom, setCustom] = useState<Record<string, unknown>>({});
@@ -75,6 +76,7 @@ export function DealDialog({
     try {
       const data: Partial<Deal> = {
         name: form.name.trim(),
+        pipeline: activePipeline,
         contact_id: form.contact_id === "" ? null : form.contact_id,
         value: parseFloat(form.value) || 0,
         stage: form.stage,
@@ -101,6 +103,10 @@ export function DealDialog({
 
         <form onSubmit={onSubmit} className="flex flex-col gap-4">
           <div className="eyebrow">Deal</div>
+          <div className="rounded-md border border-border bg-secondary/45 px-3 py-2 text-sm">
+            <span className="text-muted-foreground">Pipeline</span>
+            <span className="ml-2 font-medium">{pipelineLabel(activePipeline)}</span>
+          </div>
 
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="name">Name</Label>

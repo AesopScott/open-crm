@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/dialog";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
 import { CustomFieldsSection, readCustom } from "@/lib/custom-fields";
+import { PIPELINES } from "@/lib/pipelines";
 import type { Company } from "@/types";
 
 const INDUSTRIES = [
@@ -33,6 +34,7 @@ const NO_INDUSTRY = "__none__";
 
 interface FormState {
   name: string;
+  pipeline: string;
   domain: string;
   industry: string;
   phone: string;
@@ -40,9 +42,10 @@ interface FormState {
   notes: string;
 }
 
-function toForm(company?: Company): FormState {
+function toForm(company: Company | undefined, defaultPipeline: string): FormState {
   return {
     name: company?.name ?? "",
+    pipeline: company?.pipeline ?? defaultPipeline,
     domain: company?.domain ?? "",
     industry: company?.industry ?? "",
     phone: company?.phone ?? "",
@@ -60,16 +63,16 @@ export function CompanyDialog({
   onOpenChange: (open: boolean) => void;
   company?: Company;
 }) {
-  const { addCompany, updateCompany, setError, customFields } = useCrm();
+  const { addCompany, updateCompany, setError, customFields, activePipeline } = useCrm();
   const companyFields = customFields.filter((d) => d.entity_type === "company");
-  const [form, setForm] = useState<FormState>(() => toForm(company));
+  const [form, setForm] = useState<FormState>(() => toForm(company, activePipeline));
   const [custom, setCustom] = useState<Record<string, unknown>>({});
   const [saving, setSaving] = useState(false);
 
   // Reset the form each time the dialog opens (create vs edit).
   useEffect(() => {
     if (open) {
-      setForm(toForm(company));
+      setForm(toForm(company, activePipeline));
       setCustom(Object.fromEntries(companyFields.map((d) => [d.key, readCustom(company, d.key) ?? ""])));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -84,6 +87,7 @@ export function CompanyDialog({
     try {
       const data: Partial<Company> = {
         name: form.name.trim(),
+        pipeline: form.pipeline as Company["pipeline"],
         domain: form.domain.trim(),
         industry: form.industry.trim(),
         phone: form.phone.trim(),
@@ -114,6 +118,22 @@ export function CompanyDialog({
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="name">Name</Label>
             <Input id="name" required value={form.name} onChange={(e) => set("name", e.target.value)} />
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="pipeline">Pipeline</Label>
+            <Select value={form.pipeline} onValueChange={(v) => set("pipeline", v)}>
+              <SelectTrigger id="pipeline" className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {PIPELINES.map((p) => (
+                  <SelectItem key={p.key} value={p.key}>
+                    {p.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
           <div className="grid grid-cols-2 gap-3">

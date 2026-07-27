@@ -31,6 +31,7 @@ export const contactImportConfig: EntityImportConfig = {
     { label: "Email", value: "email" },
     { label: "Phone", value: "phone" },
     { label: "Title", value: "title" },
+    { label: "Pipeline", value: "pipeline" },
     { label: "Company", value: "company" },
     { label: "Company domain", value: "company_domain" },
     { label: "Company industry", value: "company_industry" },
@@ -44,6 +45,7 @@ export const contactImportConfig: EntityImportConfig = {
     email: "email", emailaddress: "email", mail: "email", primaryemail: "email",
     phone: "phone", phonenumber: "phone", mobile: "phone", mobilephone: "phone", cell: "phone", telephone: "phone", tel: "phone",
     title: "title", jobtitle: "title", role: "title", position: "title",
+    pipeline: "pipeline", audience: "pipeline", group: "pipeline", segment: "pipeline", type: "pipeline",
     company: "company", companyname: "company", organization: "company", organisation: "company", account: "company", employer: "company",
     companydomain: "company_domain", domain: "company_domain", website: "company_domain", companywebsite: "company_domain",
     industry: "company_industry", companyindustry: "company_industry", sector: "company_industry", vertical: "company_industry",
@@ -58,6 +60,7 @@ export const contactImportConfig: EntityImportConfig = {
     [/domain|website/, "company_domain"],
     [/industry|sector/, "company_industry"],
     [/jobtitle|^title$|position/, "title"],
+    [/pipeline|audience|segment|group/, "pipeline"],
   ],
   hasRequired: (m) => m.some((f) => f === "first_name" || f === "full_name"),
   requiredHint: "Map a column to First name or Full name to continue.",
@@ -70,6 +73,7 @@ export const companyImportConfig: EntityImportConfig = {
   noun: "company",
   fields: [
     { label: "Name", value: "name" },
+    { label: "Pipeline", value: "pipeline" },
     { label: "Domain", value: "domain" },
     { label: "Industry", value: "industry" },
     { label: "Phone", value: "phone" },
@@ -78,6 +82,7 @@ export const companyImportConfig: EntityImportConfig = {
   ],
   exact: {
     name: "name", companyname: "name", company: "name", organization: "name", organisation: "name", account: "name",
+    pipeline: "pipeline", audience: "pipeline", group: "pipeline", segment: "pipeline", type: "pipeline",
     domain: "domain", website: "domain", companydomain: "domain", url: "domain",
     industry: "industry", sector: "industry", vertical: "industry",
     phone: "phone", phonenumber: "phone", telephone: "phone", tel: "phone", mainphone: "phone",
@@ -86,6 +91,7 @@ export const companyImportConfig: EntityImportConfig = {
   },
   fuzzy: [
     [/company|organi|account/, "name"],
+    [/pipeline|audience|segment|group/, "pipeline"],
     [/domain|website/, "domain"],
     [/industry|sector/, "industry"],
     [/phone|^tel/, "phone"],

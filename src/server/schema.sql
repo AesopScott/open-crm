@@ -4,6 +4,7 @@
 CREATE TABLE IF NOT EXISTS companies (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
+  pipeline TEXT NOT NULL DEFAULT 'vendor_sponsors',
   domain TEXT DEFAULT '',
   industry TEXT DEFAULT '',
   phone TEXT DEFAULT '',
@@ -16,6 +17,7 @@ CREATE TABLE IF NOT EXISTS companies (
 CREATE TABLE IF NOT EXISTS contacts (
   id TEXT PRIMARY KEY,
   first_name TEXT NOT NULL,
+  pipeline TEXT NOT NULL DEFAULT 'vip_registrants',
   last_name TEXT DEFAULT '',
   email TEXT DEFAULT '',
   phone TEXT DEFAULT '',
@@ -29,6 +31,7 @@ CREATE TABLE IF NOT EXISTS contacts (
 CREATE TABLE IF NOT EXISTS deals (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
+  pipeline TEXT NOT NULL DEFAULT 'vendor_sponsors',
   contact_id TEXT REFERENCES contacts(id) ON DELETE SET NULL,
   value REAL DEFAULT 0,
   stage TEXT NOT NULL DEFAULT 'prospect',
@@ -48,6 +51,7 @@ CREATE TABLE IF NOT EXISTS deals (
 -- the user renamed or deleted, and we stay clear of D1's compound-SELECT limits.
 CREATE TABLE IF NOT EXISTS stages (
   key TEXT PRIMARY KEY,
+  pipeline TEXT NOT NULL DEFAULT 'vendor_sponsors',
   label TEXT NOT NULL,
   color TEXT NOT NULL DEFAULT 'slate',
   position INTEGER NOT NULL DEFAULT 0,
@@ -90,6 +94,10 @@ CREATE TABLE IF NOT EXISTS custom_field_defs (
 
 CREATE INDEX IF NOT EXISTS idx_contacts_company ON contacts(company_id);
 CREATE INDEX IF NOT EXISTS idx_deals_contact ON deals(contact_id);
+CREATE INDEX IF NOT EXISTS idx_companies_pipeline ON companies(pipeline);
+CREATE INDEX IF NOT EXISTS idx_contacts_pipeline ON contacts(pipeline);
+CREATE INDEX IF NOT EXISTS idx_deals_pipeline ON deals(pipeline);
+CREATE INDEX IF NOT EXISTS idx_stages_pipeline ON stages(pipeline, position);
 CREATE INDEX IF NOT EXISTS idx_contacts_status ON contacts(status);
 CREATE INDEX IF NOT EXISTS idx_deals_stage ON deals(stage);
 CREATE INDEX IF NOT EXISTS idx_activities_entity ON activities(entity_type, entity_id);

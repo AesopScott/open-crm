@@ -174,9 +174,21 @@ const app = createApp<Env>({
 const ErrorSchema = z.object({ error: z.string() }).openapi("Error");
 const OkSchema = z.object({ ok: z.boolean() }).openapi("Ok");
 
+const PIPELINES = ["vip_registrants", "vendor_sponsors"] as const;
+type PipelineKey = typeof PIPELINES[number];
+const DEFAULT_CONTACT_PIPELINE: PipelineKey = "vip_registrants";
+const DEFAULT_COMPANY_PIPELINE: PipelineKey = "vendor_sponsors";
+const DEFAULT_DEAL_PIPELINE: PipelineKey = "vendor_sponsors";
+
+function normalizePipeline(value: unknown, fallback: PipelineKey = DEFAULT_CONTACT_PIPELINE): PipelineKey {
+  const raw = typeof value === "string" ? value.trim() : "";
+  return PIPELINES.includes(raw as PipelineKey) ? (raw as PipelineKey) : fallback;
+}
+
 const CompanySchema = z.object({
   id: z.string(),
   name: z.string(),
+  pipeline: z.enum(PIPELINES),
   domain: z.string(),
   industry: z.string(),
   phone: z.string(),
@@ -191,6 +203,7 @@ type Company = z.infer<typeof CompanySchema>;
 const ContactSchema = z.object({
   id: z.string(),
   first_name: z.string(),
+  pipeline: z.enum(PIPELINES),
   last_name: z.string(),
   email: z.string(),
   phone: z.string(),
@@ -207,6 +220,7 @@ type Contact = z.infer<typeof ContactSchema>;
 const DealSchema = z.object({
   id: z.string(),
   name: z.string(),
+  pipeline: z.enum(PIPELINES),
   contact_id: z.string().nullable(),
   value: z.number(),
   stage: z.string(),
@@ -269,6 +283,32 @@ function buildFilters(cols: Set<string>, raw: string | undefined, prefix = ""): 
   return { clauses, params };
 }
 
+let pipelineSchemaReady = false;
+
+async function ensureColumn(table: string, column: string, definition: string): Promise<void> {
+  const cols = await tableColumns(table);
+  if (cols.has(column)) return;
+  await run(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+}
+
+async function ensurePipelineSchema(): Promise<void> {
+  if (pipelineSchemaReady) return;
+  await ensureColumn("companies", "pipeline", "TEXT NOT NULL DEFAULT 'vendor_sponsors'");
+  await ensureColumn("contacts", "pipeline", "TEXT NOT NULL DEFAULT 'vip_registrants'");
+  await ensureColumn("deals", "pipeline", "TEXT NOT NULL DEFAULT 'vendor_sponsors'");
+  await ensureColumn("stages", "pipeline", "TEXT NOT NULL DEFAULT 'vendor_sponsors'");
+  await run("CREATE INDEX IF NOT EXISTS idx_companies_pipeline ON companies(pipeline)");
+  await run("CREATE INDEX IF NOT EXISTS idx_contacts_pipeline ON contacts(pipeline)");
+  await run("CREATE INDEX IF NOT EXISTS idx_deals_pipeline ON deals(pipeline)");
+  await run("CREATE INDEX IF NOT EXISTS idx_stages_pipeline ON stages(pipeline, position)");
+  pipelineSchemaReady = true;
+}
+
+app.use("*", async (_c, next) => {
+  await ensurePipelineSchema();
+  await next();
+});
+
 // ── Stats ──────────────────────────────────────────────────────────
 
 const getStats = createRoute({
@@ -317,6 +357,7 @@ const listCompanies = createRoute({
   request: {
     query: PaginationQuery.extend({
       industry: z.string().optional().openapi({ description: "Filter by industry" }),
+      pipeline: z.enum(PIPELINES).optional().openapi({ description: "Filter by CRM pipeline" }),
     }),
   },
   responses: {
@@ -341,6 +382,7 @@ app.openapi(listCompanies, async (c) => {
     const offset = (page - 1) * limit;
     const search = (q.search || "").trim();
     const industry = (q.industry || "").trim();
+    const pipeline = normalizePipeline(c.req.query("pipeline"), DEFAULT_COMPANY_PIPELINE);
 
     const cols = await tableColumns("companies");
     let sortCol = q.sort || "id";
@@ -359,6 +401,8 @@ app.openapi(listCompanies, async (c) => {
       where.push("industry = ?");
       params.push(industry);
     }
+    where.push("pipeline = ?");
+    params.push(pipeline);
     const flt = buildFilters(cols, q.filters);
     where.push(...flt.clauses);
     params.push(...flt.params);
@@ -395,6 +439,7 @@ const createCompany = createRoute({
         name: z.string().min(1),
         domain: z.string().optional(),
         industry: z.string().optional(),
+        pipeline: z.enum(PIPELINES).optional(),
         phone: z.string().optional(),
         email: z.string().optional(),
         notes: z.string().optional(),
@@ -420,11 +465,12 @@ app.openapi(createCompany, async (c) => {
     if (missingReq.length) return c.json({ error: `Missing required field(s): ${missingReq.join(", ")}` }, 400);
     const name = body.name.trim();
     if (!name) return c.json({ error: "Name is required" }, 400);
+    const pipeline = normalizePipeline(body.pipeline, DEFAULT_COMPANY_PIPELINE);
 
     const id = crypto.randomUUID();
     await run(
-      "INSERT INTO companies (id, name, domain, industry, phone, email, notes) VALUES (?, ?, ?, ?, ?, ?, ?)",
-      [id, name, (body.domain || "").trim(), (body.industry || "").trim(), (body.phone || "").trim(), (body.email || "").trim(), (body.notes || "").trim()],
+      "INSERT INTO companies (id, name, pipeline, domain, industry, phone, email, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      [id, name, pipeline, (body.domain || "").trim(), (body.industry || "").trim(), (body.phone || "").trim(), (body.email || "").trim(), (body.notes || "").trim()],
     );
 
     await applyCustomValues("company", "companies", id, customValues);
@@ -450,6 +496,7 @@ const updateCompany = createRoute({
         name: z.string().optional(),
         domain: z.string().optional(),
         industry: z.string().optional(),
+        pipeline: z.enum(PIPELINES).optional(),
         phone: z.string().optional(),
         email: z.string().optional(),
         notes: z.string().optional(),
@@ -480,10 +527,10 @@ app.openapi(updateCompany, async (c) => {
     const fields: string[] = [];
     const params: unknown[] = [];
 
-    for (const key of ["name", "domain", "industry", "phone", "email", "notes"] as const) {
+    for (const key of ["name", "pipeline", "domain", "industry", "phone", "email", "notes"] as const) {
       if (body[key] !== undefined) {
         fields.push(`${key} = ?`);
-        params.push(typeof body[key] === "string" ? body[key].trim() : body[key]);
+        params.push(key === "pipeline" ? normalizePipeline(body[key], DEFAULT_COMPANY_PIPELINE) : typeof body[key] === "string" ? body[key].trim() : body[key]);
       }
     }
 
@@ -546,6 +593,7 @@ const listContacts = createRoute({
     query: PaginationQuery.extend({
       status: z.string().optional().openapi({ description: "Filter by status (lead, customer, etc.)" }),
       company_id: z.string().optional().openapi({ description: "Filter by company ID" }),
+      pipeline: z.enum(PIPELINES).optional().openapi({ description: "Filter by CRM pipeline" }),
     }),
   },
   responses: {
@@ -571,6 +619,7 @@ app.openapi(listContacts, async (c) => {
     const search = (q.search || "").trim();
     const status = (q.status || "").trim();
     const companyId = q.company_id || "";
+    const pipeline = normalizePipeline(c.req.query("pipeline"), DEFAULT_CONTACT_PIPELINE);
 
     const cols = await tableColumns("contacts");
     let sortCol = q.sort || "id";
@@ -595,6 +644,8 @@ app.openapi(listContacts, async (c) => {
       where.push("ct.company_id = ?");
       params.push(companyId);
     }
+    where.push("ct.pipeline = ?");
+    params.push(pipeline);
     const flt = buildFilters(cols, q.filters, "ct.");
     where.push(...flt.clauses);
     params.push(...flt.params);
@@ -639,6 +690,7 @@ const createContact = createRoute({
         company_id: z.string().nullable().optional(),
         title: z.string().optional(),
         status: z.string().optional(),
+        pipeline: z.enum(PIPELINES).optional(),
         custom: CustomValues,
       }).passthrough() } },
     },
@@ -661,6 +713,7 @@ app.openapi(createContact, async (c) => {
     if (missingReq.length) return c.json({ error: `Missing required field(s): ${missingReq.join(", ")}` }, 400);
     const firstName = body.first_name.trim();
     if (!firstName) return c.json({ error: "First name is required" }, 400);
+    const pipeline = normalizePipeline(body.pipeline, DEFAULT_CONTACT_PIPELINE);
 
     // Link to the chosen company, or infer one from the work-email domain
     // (skips free providers) so a contact never lands orphaned when its email
@@ -668,13 +721,13 @@ app.openapi(createContact, async (c) => {
     let companyId = body.company_id ? String(body.company_id) : null;
     if (!companyId && body.email) {
       const dom = workEmailDomain(String(body.email));
-      if (dom) companyId = await findOrCreateCompanyByDomain(dom);
+      if (dom) companyId = await findOrCreateCompanyByDomain(dom, pipeline);
     }
 
     const id = crypto.randomUUID();
     await run(
-      "INSERT INTO contacts (id, first_name, last_name, email, phone, company_id, title, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-      [id, firstName, (body.last_name || "").trim(), (body.email || "").trim(), (body.phone || "").trim(), companyId, (body.title || "").trim(), (body.status || "lead").trim()],
+      "INSERT INTO contacts (id, first_name, pipeline, last_name, email, phone, company_id, title, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      [id, firstName, pipeline, (body.last_name || "").trim(), (body.email || "").trim(), (body.phone || "").trim(), companyId, (body.title || "").trim(), (body.status || "lead").trim()],
     );
 
     await applyCustomValues("contact", "contacts", id, customValues);
@@ -709,6 +762,7 @@ const updateContact = createRoute({
         company_id: z.string().nullable().optional(),
         title: z.string().optional(),
         status: z.string().optional(),
+        pipeline: z.enum(PIPELINES).optional(),
         custom: CustomValues,
       }).passthrough() } },
     },
@@ -736,10 +790,10 @@ app.openapi(updateContact, async (c) => {
     const fields: string[] = [];
     const params: unknown[] = [];
 
-    for (const key of ["first_name", "last_name", "email", "phone", "title", "status"] as const) {
+    for (const key of ["first_name", "pipeline", "last_name", "email", "phone", "title", "status"] as const) {
       if (body[key] !== undefined) {
         fields.push(`${key} = ?`);
-        params.push(typeof body[key] === "string" ? body[key].trim() : body[key]);
+        params.push(key === "pipeline" ? normalizePipeline(body[key], DEFAULT_CONTACT_PIPELINE) : typeof body[key] === "string" ? body[key].trim() : body[key]);
       }
     }
     if (body.company_id !== undefined) {
@@ -807,6 +861,7 @@ app.openapi(deleteContact, async (c) => {
 
 const StageSchema = z.object({
   key: z.string(),
+  pipeline: z.enum(PIPELINES),
   label: z.string(),
   color: z.string().openapi({ description: "Palette token: sky, emerald, amber, rose, violet, fuchsia, teal, orange, slate" }),
   position: z.number().int(),
@@ -821,45 +876,51 @@ type StageRow = z.infer<typeof StageSchema>;
 const STAGE_COLORS = ["sky", "emerald", "amber", "rose", "violet", "fuchsia", "teal", "orange", "slate"];
 const STAGE_KEY_RE = /^[a-z][a-z0-9_]*$/;
 
-// Default sales pipeline — seeded only when the table is empty, so re-deploys
-// never resurrect a stage the user renamed or deleted.
-const DEFAULT_STAGES: Array<[string, string, string, number, number, number]> = [
-  ["prospect", "Prospect", "slate", 0, 0, 0],
-  ["qualified", "Qualified", "sky", 1, 0, 0],
-  ["proposal", "Proposal", "violet", 2, 0, 0],
-  ["negotiation", "Negotiation", "amber", 3, 0, 0],
-  ["won", "Won", "emerald", 4, 1, 0],
-  ["lost", "Lost", "rose", 5, 0, 1],
+const DEFAULT_STAGES: Array<[PipelineKey, string, string, string, number, number, number]> = [
+  ["vip_registrants", "vip_invited", "Invited", "slate", 0, 0, 0],
+  ["vip_registrants", "vip_registered", "Registered", "sky", 1, 0, 0],
+  ["vip_registrants", "vip_confirmed", "Confirmed", "teal", 2, 0, 0],
+  ["vip_registrants", "vip_attended", "Attended", "emerald", 3, 1, 0],
+  ["vip_registrants", "vip_declined", "Declined", "rose", 4, 0, 1],
+  ["vendor_sponsors", "prospect", "Prospect", "slate", 0, 0, 0],
+  ["vendor_sponsors", "qualified", "Qualified", "sky", 1, 0, 0],
+  ["vendor_sponsors", "proposal", "Proposal", "violet", 2, 0, 0],
+  ["vendor_sponsors", "negotiation", "Negotiation", "amber", 3, 0, 0],
+  ["vendor_sponsors", "won", "Won", "emerald", 4, 1, 0],
+  ["vendor_sponsors", "lost", "Lost", "rose", 5, 0, 1],
 ];
 
 let stagesSeeded = false; // per-isolate fast path; the COUNT re-check is cheap
 
 async function ensureStagesSeeded(): Promise<void> {
   if (stagesSeeded) return;
-  const row = await get<{ count: number }>("SELECT COUNT(*) as count FROM stages");
-  if ((row?.count ?? 0) === 0) {
-    for (const s of DEFAULT_STAGES) {
-      await run("INSERT OR IGNORE INTO stages (key, label, color, position, is_won, is_lost) VALUES (?, ?, ?, ?, ?, ?)", s);
+  for (const pipeline of PIPELINES) {
+    const row = await get<{ count: number }>("SELECT COUNT(*) as count FROM stages WHERE pipeline = ?", [pipeline]);
+    if ((row?.count ?? 0) === 0) {
+      for (const s of DEFAULT_STAGES.filter(([p]) => p === pipeline)) {
+        await run("INSERT OR IGNORE INTO stages (pipeline, key, label, color, position, is_won, is_lost) VALUES (?, ?, ?, ?, ?, ?, ?)", s);
+      }
     }
   }
   stagesSeeded = true;
 }
 
-const listStagesRows = async () => {
+const listStagesRows = async (pipeline: PipelineKey = DEFAULT_DEAL_PIPELINE) => {
   await ensureStagesSeeded();
-  return query<StageRow>("SELECT * FROM stages ORDER BY position, key");
+  return query<StageRow>("SELECT * FROM stages WHERE pipeline = ? ORDER BY position, key", [pipeline]);
 };
 
 /** Look up one stage (seeding the defaults first if the table is empty). */
-async function getStageRow(key: string): Promise<StageRow | undefined> {
+async function getStageRow(key: string, pipeline?: PipelineKey): Promise<StageRow | undefined> {
   await ensureStagesSeeded();
+  if (pipeline) return get<StageRow>("SELECT * FROM stages WHERE key = ? AND pipeline = ?", [key, pipeline]);
   return get<StageRow>("SELECT * FROM stages WHERE key = ?", [key]);
 }
 
 /** 400 body for an unknown stage key on a deal write. */
-async function unknownStageError(key: string): Promise<{ error: string }> {
-  const valid = (await listStagesRows()).map((s) => s.key).join(", ");
-  return { error: `Unknown stage "${key}". Valid stages: ${valid}. Create it first via POST /api/stages.` };
+async function unknownStageError(key: string, pipeline: PipelineKey = DEFAULT_DEAL_PIPELINE): Promise<{ error: string }> {
+  const valid = (await listStagesRows(pipeline)).map((s) => s.key).join(", ");
+  return { error: `Unknown stage "${key}" for ${pipeline}. Valid stages: ${valid}. Create it first via POST /api/stages.` };
 }
 
 const listStages = createRoute({
@@ -867,6 +928,11 @@ const listStages = createRoute({
   path: "/api/stages",
   tags: ["Stages"],
   summary: "List pipeline stages in order",
+  request: {
+    query: z.object({
+      pipeline: z.enum(PIPELINES).optional().openapi({ description: "Pipeline key" }),
+    }),
+  },
   responses: {
     200: { description: "Stages", content: { "application/json": { schema: z.object({ stages: z.array(StageSchema) }) } } },
     500: { description: "Server error", content: { "application/json": { schema: ErrorSchema } } },
@@ -875,7 +941,7 @@ const listStages = createRoute({
 
 app.openapi(listStages, async (c) => {
   try {
-    return c.json({ stages: await listStagesRows() }, 200);
+    return c.json({ stages: await listStagesRows(normalizePipeline(c.req.query("pipeline"), DEFAULT_DEAL_PIPELINE)) }, 200);
   } catch (err: unknown) {
     return c.json({ error: (err as Error).message }, 500);
   }
@@ -891,6 +957,7 @@ const createStage = createRoute({
       required: true,
       content: { "application/json": { schema: z.object({
         label: z.string().min(1),
+        pipeline: z.enum(PIPELINES).optional(),
         key: z.string().optional().openapi({ description: "Immutable identifier; derived from the label when omitted" }),
         color: z.string().optional(),
         position: z.number().int().optional().openapi({ description: "Defaults to the end of the pipeline" }),
@@ -910,9 +977,11 @@ const createStage = createRoute({
 app.openapi(createStage, async (c) => {
   try {
     const body = c.req.valid("json");
+    const pipeline = normalizePipeline(body.pipeline, DEFAULT_DEAL_PIPELINE);
     const label = body.label.trim();
     if (!label) return c.json({ error: "Label is required" }, 400);
-    const key = (body.key || label.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "")).trim();
+    const derived = `${pipeline}_${label.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "")}`;
+    const key = (body.key || derived).trim();
     if (!STAGE_KEY_RE.test(key)) {
       return c.json({ error: `Invalid stage key "${key}" — use lowercase letters, digits, and underscores (must start with a letter).` }, 400);
     }
@@ -923,12 +992,12 @@ app.openapi(createStage, async (c) => {
     const color = STAGE_COLORS.includes((body.color || "").trim()) ? (body.color as string).trim() : "slate";
     let position = body.position;
     if (position === undefined) {
-      const max = await get<{ m: number }>("SELECT COALESCE(MAX(position), -1) as m FROM stages");
+      const max = await get<{ m: number }>("SELECT COALESCE(MAX(position), -1) as m FROM stages WHERE pipeline = ?", [pipeline]);
       position = (max?.m ?? -1) + 1;
     }
     await run(
-      "INSERT INTO stages (key, label, color, position, is_won, is_lost) VALUES (?, ?, ?, ?, ?, ?)",
-      [key, label, color, position, body.is_won ? 1 : 0, body.is_lost ? 1 : 0],
+      "INSERT INTO stages (key, pipeline, label, color, position, is_won, is_lost) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      [key, pipeline, label, color, position, body.is_won ? 1 : 0, body.is_lost ? 1 : 0],
     );
     const inserted = await get<StageRow>("SELECT * FROM stages WHERE key = ?", [key]);
     return c.json({ stage: inserted! }, 201);
@@ -1028,7 +1097,7 @@ app.openapi(deleteStage, async (c) => {
     const { reassign_to } = c.req.valid("query");
     const existing = await getStageRow(key);
     if (!existing) return c.json({ error: "Stage not found" }, 404);
-    const total = await get<{ count: number }>("SELECT COUNT(*) as count FROM stages");
+    const total = await get<{ count: number }>("SELECT COUNT(*) as count FROM stages WHERE pipeline = ?", [existing.pipeline]);
     if ((total?.count ?? 0) <= 1) return c.json({ error: "Cannot delete the last stage" }, 400);
 
     const inStage = await get<{ count: number }>("SELECT COUNT(*) as count FROM deals WHERE stage = ?", [key]);
@@ -1039,8 +1108,8 @@ app.openapi(deleteStage, async (c) => {
         return c.json({ error: `Stage has ${inStage!.count} deal(s). Pass ?reassign_to=<stage key> to move them first.` }, 409);
       }
       if (target === key) return c.json({ error: "reassign_to must be a different stage" }, 400);
-      const targetRow = await getStageRow(target);
-      if (!targetRow) return c.json(await unknownStageError(target), 400);
+      const targetRow = await getStageRow(target, existing.pipeline);
+      if (!targetRow) return c.json(await unknownStageError(target, existing.pipeline), 400);
       const res = await run("UPDATE deals SET stage = ?, updated_at = datetime('now') WHERE stage = ?", [target, key]);
       reassigned = res.changes ?? 0;
     }
@@ -1058,6 +1127,11 @@ const getDealsBoard = createRoute({
   path: "/api/deals/board",
   tags: ["Deals"],
   summary: "Get all deals for the pipeline board view",
+  request: {
+    query: z.object({
+      pipeline: z.enum(PIPELINES).optional().openapi({ description: "Pipeline key" }),
+    }),
+  },
   responses: {
     200: { description: "All deals with contact/company info", content: { "application/json": { schema: z.object({ deals: z.array(DealSchema) }) } } },
     500: { description: "Server error", content: { "application/json": { schema: ErrorSchema } } },
@@ -1066,6 +1140,8 @@ const getDealsBoard = createRoute({
 
 app.openapi(getDealsBoard, async (c) => {
   try {
+    const q = c.req.valid("query");
+    const pipeline = normalizePipeline(c.req.query("pipeline"), DEFAULT_DEAL_PIPELINE);
     const rows = await query<Deal>(
       `SELECT d.*,
               ct.first_name as contact_first_name, ct.last_name as contact_last_name,
@@ -1073,7 +1149,9 @@ app.openapi(getDealsBoard, async (c) => {
        FROM deals d
        LEFT JOIN contacts ct ON d.contact_id = ct.id
        LEFT JOIN companies co ON ct.company_id = co.id
+       WHERE d.pipeline = ?
        ORDER BY d.created_at ASC`,
+      [pipeline],
     );
     return c.json({ deals: rows }, 200);
   } catch (err: unknown) {
@@ -1090,6 +1168,7 @@ const listDeals = createRoute({
     query: PaginationQuery.extend({
       stage: z.string().optional().openapi({ description: "Filter by stage key (see GET /api/stages for the pipeline vocabulary)" }),
       contact_id: z.string().optional().openapi({ description: "Filter by contact ID" }),
+      pipeline: z.enum(PIPELINES).optional().openapi({ description: "Pipeline key" }),
     }),
   },
   responses: {
@@ -1116,9 +1195,10 @@ app.openapi(listDeals, async (c) => {
     const search = (q.search || "").trim();
     const stage = (q.stage || "").trim();
     const contactId = q.contact_id || "";
+    const pipeline = normalizePipeline(c.req.query("pipeline"), DEFAULT_DEAL_PIPELINE);
 
     let sortCol = q.sort || "id";
-    if (!["id", "name", "value", "stage", "close_date", "created_at"].includes(sortCol)) sortCol = "id";
+    if (!["id", "name", "pipeline", "value", "stage", "close_date", "created_at"].includes(sortCol)) sortCol = "id";
     let order = (q.order || "desc").toLowerCase();
     if (order !== "asc" && order !== "desc") order = "desc";
 
@@ -1137,6 +1217,8 @@ app.openapi(listDeals, async (c) => {
       where.push("d.contact_id = ?");
       params.push(contactId);
     }
+    where.push("d.pipeline = ?");
+    params.push(pipeline);
 
     const whereSQL = where.length ? " WHERE " + where.join(" AND ") : "";
 
@@ -1182,6 +1264,7 @@ const createDeal = createRoute({
         name: z.string().min(1),
         contact_id: z.string().nullable().optional(),
         value: z.union([z.number(), z.string()]).optional(),
+        pipeline: z.enum(PIPELINES).optional(),
         stage: z.string().optional(),
         close_date: z.string().optional(),
         notes: z.string().optional(),
@@ -1210,21 +1293,22 @@ app.openapi(createDeal, async (c) => {
 
     const contactId = body.contact_id ? String(body.contact_id) : null;
     const value = parseFloat(String(body.value)) || 0;
+    const pipeline = normalizePipeline(body.pipeline, DEFAULT_DEAL_PIPELINE);
 
     // Stage must exist; default is the first stage of the pipeline.
     let stageKey = (body.stage || "").trim();
     if (stageKey) {
-      const ok = await getStageRow(stageKey);
-      if (!ok) return c.json(await unknownStageError(stageKey), 400);
+      const ok = await getStageRow(stageKey, pipeline);
+      if (!ok) return c.json(await unknownStageError(stageKey, pipeline), 400);
     } else {
-      const all = await listStagesRows();
+      const all = await listStagesRows(pipeline);
       stageKey = all[0]?.key ?? "prospect";
     }
 
     const id = crypto.randomUUID();
     await run(
-      "INSERT INTO deals (id, name, contact_id, value, stage, close_date, notes) VALUES (?, ?, ?, ?, ?, ?, ?)",
-      [id, name, contactId, value, stageKey, (body.close_date || "").trim(), (body.notes || "").trim()],
+      "INSERT INTO deals (id, name, pipeline, contact_id, value, stage, close_date, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      [id, name, pipeline, contactId, value, stageKey, (body.close_date || "").trim(), (body.notes || "").trim()],
     );
 
     await applyCustomValues("deal", "deals", id, customValues);
@@ -1258,6 +1342,7 @@ const updateDeal = createRoute({
         name: z.string().optional(),
         contact_id: z.string().nullable().optional(),
         value: z.union([z.number(), z.string()]).optional(),
+        pipeline: z.enum(PIPELINES).optional(),
         stage: z.string().optional(),
         close_date: z.string().optional(),
         notes: z.string().optional(),
@@ -1285,19 +1370,32 @@ app.openapi(updateDeal, async (c) => {
     if (unknownErr) return c.json(unknownErr, 422);
     const missingReq = await missingRequiredCustom("deal", customValues, "update");
     if (missingReq.length) return c.json({ error: `Missing required field(s): ${missingReq.join(", ")}` }, 400);
-    if (body.stage !== undefined) {
-      const stageKey = String(body.stage).trim();
-      const ok = await getStageRow(stageKey);
-      if (!ok) return c.json(await unknownStageError(stageKey), 400);
-    }
     const fields: string[] = [];
     const params: unknown[] = [];
+    const exists = await get<Deal>("SELECT * FROM deals WHERE id = ?", [id]);
+    if (!exists) return c.json({ error: "Deal not found" }, 404);
 
-    for (const key of ["name", "stage", "close_date", "notes"] as const) {
+    const nextPipeline = body.pipeline !== undefined
+      ? normalizePipeline(body.pipeline, exists.pipeline)
+      : normalizePipeline(exists.pipeline, DEFAULT_DEAL_PIPELINE);
+    let nextStage = body.stage !== undefined ? String(body.stage).trim() : undefined;
+    if (nextStage !== undefined) {
+      const ok = await getStageRow(nextStage, nextPipeline);
+      if (!ok) return c.json(await unknownStageError(nextStage, nextPipeline), 400);
+    } else if (body.pipeline !== undefined && nextPipeline !== exists.pipeline) {
+      const all = await listStagesRows(nextPipeline);
+      nextStage = all[0]?.key;
+    }
+
+    for (const key of ["name", "pipeline", "close_date", "notes"] as const) {
       if (body[key] !== undefined) {
         fields.push(`${key} = ?`);
-        params.push(typeof body[key] === "string" ? body[key].trim() : body[key]);
+        params.push(key === "pipeline" ? nextPipeline : typeof body[key] === "string" ? body[key].trim() : body[key]);
       }
+    }
+    if (nextStage !== undefined) {
+      fields.push("stage = ?");
+      params.push(nextStage);
     }
     if (body.value !== undefined) {
       fields.push("value = ?");
@@ -1307,12 +1405,8 @@ app.openapi(updateDeal, async (c) => {
       fields.push("contact_id = ?");
       params.push(body.contact_id ? String(body.contact_id) : null);
     }
-
     const hasCustom = Object.keys(customValues).length > 0;
     if (fields.length === 0 && !hasCustom) return c.json({ error: "No fields to update" }, 400);
-
-    const exists = await get("SELECT id FROM deals WHERE id = ?", [id]);
-    if (!exists) return c.json({ error: "Deal not found" }, 404);
 
     if (fields.length > 0) {
       fields.push("updated_at = datetime('now')");
@@ -1546,18 +1640,18 @@ function workEmailDomain(email: string): string {
 /** Find a company whose stored domain resolves to `domain` (tolerating
  *  protocol / www / trailing slash), else create a lightweight one named after
  *  the domain. Used to auto-link a contact to a company from its work email. */
-async function findOrCreateCompanyByDomain(domain: string): Promise<string> {
+async function findOrCreateCompanyByDomain(domain: string, pipeline: PipelineKey = DEFAULT_COMPANY_PIPELINE): Promise<string> {
   const existing = await get<{ id: string }>(
     `SELECT id FROM companies
-      WHERE lower(replace(replace(replace(rtrim(domain,'/'),'https://',''),'http://',''),'www.','')) = ?
+      WHERE pipeline = ? AND lower(replace(replace(replace(rtrim(domain,'/'),'https://',''),'http://',''),'www.','')) = ?
       LIMIT 1`,
-    [domain],
+    [pipeline, domain],
   );
   if (existing) return existing.id;
   const id = crypto.randomUUID();
   const sld = domain.split(".")[0] || domain;
   const name = sld.charAt(0).toUpperCase() + sld.slice(1);
-  await run("INSERT INTO companies (id, name, domain) VALUES (?, ?, ?)", [id, name, domain]);
+  await run("INSERT INTO companies (id, name, pipeline, domain) VALUES (?, ?, ?, ?)", [id, name, pipeline, domain]);
   return id;
 }
 
@@ -1578,6 +1672,7 @@ app.post("/api/contacts/import", async (c) => {
         phone?: string;
         title?: string;
         status?: string;
+        pipeline?: string;
         company?: string;
         company_domain?: string;
         company_industry?: string;
@@ -1587,11 +1682,13 @@ app.post("/api/contacts/import", async (c) => {
       // Opt-in: infer/associate a company from each contact's work-email domain
       // when the row has no explicit company column.
       inferCompanyFromEmail?: boolean;
+      pipeline?: string;
     }>();
     const rows = Array.isArray(body.contacts) ? body.contacts : [];
     if (rows.length === 0) return c.json({ error: "No rows to import" }, 400);
     if (rows.length > 2000) return c.json({ error: "Import is limited to 2000 rows at a time" }, 400);
     const inferFromEmail = body.inferCompanyFromEmail === true;
+    const importPipeline = normalizePipeline(body.pipeline, DEFAULT_CONTACT_PIPELINE);
 
     // Keep only rows with at least a first name; normalize fields. `inferDomain`
     // is the work-email domain to build a company from — set only when opted in,
@@ -1607,6 +1704,7 @@ app.post("/api/contacts/import", async (c) => {
           phone: (r.phone || "").trim(),
           title: (r.title || "").trim(),
           status: CONTACT_STATUSES.includes((r.status || "").trim()) ? (r.status as string).trim() : "lead",
+          pipeline: normalizePipeline(r.pipeline, importPipeline),
           company,
           company_domain: (r.company_domain || "").trim(),
           company_industry: (r.company_industry || "").trim(),
@@ -1624,46 +1722,46 @@ app.post("/api/contacts/import", async (c) => {
     // Company attributes (domain/industry/phone) are captured from the first
     // row that carries each one, so a new company lands fully populated instead
     // of as a name-only stub.
-    type CompanyDraft = { name: string; domain: string; industry: string; phone: string };
+    type CompanyDraft = { name: string; pipeline: PipelineKey; domain: string; industry: string; phone: string };
     const nameByKey = new Map<string, CompanyDraft>();
     for (const r of clean) {
       if (!r.company) continue;
-      const key = r.company.toLowerCase();
+      const key = `${r.pipeline}:${r.company.toLowerCase()}`;
       const existing = nameByKey.get(key);
       if (!existing) {
-        nameByKey.set(key, { name: r.company, domain: r.company_domain, industry: r.company_industry, phone: r.company_phone });
+        nameByKey.set(key, { name: r.company, pipeline: r.pipeline, domain: r.company_domain, industry: r.company_industry, phone: r.company_phone });
       } else {
         if (!existing.domain) existing.domain = r.company_domain;
         if (!existing.industry) existing.industry = r.company_industry;
         if (!existing.phone) existing.phone = r.company_phone;
       }
     }
-    const companyIds = new Map<string, string>(); // lowercased name → id
+    const companyIds = new Map<string, string>(); // pipeline:name → id
 
-    const loadIds = async (names: string[]) => {
-      for (const group of chunk(names, LOOKUP_CHUNK)) {
+    const loadIds = async (companies: CompanyDraft[]) => {
+      for (const group of chunk(companies, LOOKUP_CHUNK)) {
         const placeholders = group.map(() => "?").join(", ");
-        const found = await query<{ id: string; name: string }>(
-          `SELECT id, name FROM companies WHERE name COLLATE NOCASE IN (${placeholders})`,
-          group,
+        const found = await query<{ id: string; name: string; pipeline: PipelineKey }>(
+          `SELECT id, name, pipeline FROM companies WHERE name COLLATE NOCASE IN (${placeholders})`,
+          group.map((co) => co.name),
         );
-        for (const co of found) companyIds.set(co.name.toLowerCase(), co.id);
+        for (const co of found) companyIds.set(`${co.pipeline}:${co.name.toLowerCase()}`, co.id);
       }
     };
 
-    const allNames = [...nameByKey.values()].map((co) => co.name);
-    await loadIds(allNames);
+    const allCompanies = [...nameByKey.values()];
+    await loadIds(allCompanies);
 
     // Create the ones that don't exist yet (multi-row insert), then reload ids.
     // Existing companies are reused untouched — dedupe-by-name wins, so we never
     // overwrite an established company's attributes from an import.
     const missing = [...nameByKey].filter(([key]) => !companyIds.has(key)).map(([, co]) => co);
     for (const group of chunk(missing, COMPANY_INSERT_CHUNK)) {
-      const placeholders = group.map(() => "(?, ?, ?, ?, ?)").join(", ");
-      const params = group.flatMap((co) => [crypto.randomUUID(), co.name, co.domain, co.industry, co.phone]);
-      await run(`INSERT INTO companies (id, name, domain, industry, phone) VALUES ${placeholders}`, params);
+      const placeholders = group.map(() => "(?, ?, ?, ?, ?, ?)").join(", ");
+      const params = group.flatMap((co) => [crypto.randomUUID(), co.name, co.pipeline, co.domain, co.industry, co.phone]);
+      await run(`INSERT INTO companies (id, name, pipeline, domain, industry, phone) VALUES ${placeholders}`, params);
     }
-    if (missing.length) await loadIds(missing.map((co) => co.name));
+    if (missing.length) await loadIds(missing);
 
     // ── Infer companies from work-email domains (opt-in) ──
     // Runs after the name phase so a domain match can land on a company that
@@ -1673,26 +1771,26 @@ app.post("/api/contacts/import", async (c) => {
     const domainSet = new Set<string>();
     for (const r of clean) if (r.inferDomain) domainSet.add(r.inferDomain);
 
-    const companyIdByDomain = new Map<string, string>(); // domain (lower) → id (UUID)
+    const companyIdByDomain = new Map<string, string>(); // pipeline:domain → id (UUID)
     const loadIdsByDomain = async (domainsList: string[]) => {
       for (const group of chunk(domainsList, LOOKUP_CHUNK)) {
         const placeholders = group.map(() => "?").join(", ");
-        const found = await query<{ id: string; domain: string }>(
-          `SELECT id, domain FROM companies WHERE domain <> '' AND domain COLLATE NOCASE IN (${placeholders})`,
+        const found = await query<{ id: string; domain: string; pipeline: PipelineKey }>(
+          `SELECT id, domain, pipeline FROM companies WHERE domain <> '' AND domain COLLATE NOCASE IN (${placeholders})`,
           group,
         );
-        for (const co of found) if (co.domain) companyIdByDomain.set(co.domain.toLowerCase(), co.id);
+        for (const co of found) if (co.domain) companyIdByDomain.set(`${co.pipeline}:${co.domain.toLowerCase()}`, co.id);
       }
     };
 
     const allDomains = [...domainSet];
     if (allDomains.length) await loadIdsByDomain(allDomains);
 
-    const missingDomains = allDomains.filter((d) => !companyIdByDomain.has(d));
+    const missingDomains = allDomains.filter((d) => !companyIdByDomain.has(`${importPipeline}:${d}`));
     for (const group of chunk(missingDomains, COMPANY_INSERT_CHUNK)) {
-      const placeholders = group.map(() => "(?, ?, ?)").join(", ");
-      const params = group.flatMap((d) => [crypto.randomUUID(), companyNameFromDomain(d), d]);
-      await run(`INSERT INTO companies (id, name, domain) VALUES ${placeholders}`, params);
+      const placeholders = group.map(() => "(?, ?, ?, ?)").join(", ");
+      const params = group.flatMap((d) => [crypto.randomUUID(), companyNameFromDomain(d), importPipeline, d]);
+      await run(`INSERT INTO companies (id, name, pipeline, domain) VALUES ${placeholders}`, params);
     }
     if (missingDomains.length) await loadIdsByDomain(missingDomains);
 
@@ -1702,7 +1800,7 @@ app.post("/api/contacts/import", async (c) => {
     // Mapped custom-field columns ride along in the same INSERT. Chunk size is
     // derived from the real column count so bound params stay ≤ 100 (D1 cap).
     const custom = await resolveImportCustomColumns("contact", clean);
-    const builtinCols = ["id", "first_name", "last_name", "email", "phone", "company_id", "title", "status"];
+    const builtinCols = ["id", "first_name", "pipeline", "last_name", "email", "phone", "company_id", "title", "status"];
     const cols = [...builtinCols, ...custom.keys.map(quoteIdent)];
     const rowsPerStmt = Math.max(1, Math.floor(100 / cols.length));
     const rowPlaceholder = `(${cols.map(() => "?").join(", ")})`;
@@ -1713,11 +1811,11 @@ app.post("/api/contacts/import", async (c) => {
       const params: unknown[] = [];
       for (const r of group) {
         const companyId = r.company
-          ? companyIds.get(r.company.toLowerCase()) ?? null
+          ? companyIds.get(`${r.pipeline}:${r.company.toLowerCase()}`) ?? null
           : r.inferDomain
-            ? companyIdByDomain.get(r.inferDomain) ?? null
+            ? companyIdByDomain.get(`${r.pipeline}:${r.inferDomain}`) ?? null
             : null;
-        params.push(crypto.randomUUID(), r.first_name, r.last_name, r.email, r.phone, companyId, r.title, r.status);
+        params.push(crypto.randomUUID(), r.first_name, r.pipeline, r.last_name, r.email, r.phone, companyId, r.title, r.status);
         for (const k of custom.keys) params.push(coerceForImport(r.custom?.[k], custom.defByKey.get(k)!));
       }
       await run(`INSERT INTO contacts (${cols.join(", ")}) VALUES ${placeholders}`, params);
@@ -1744,17 +1842,20 @@ app.post("/api/companies/import", async (c) => {
         phone?: string;
         email?: string;
         notes?: string;
+        pipeline?: string;
         custom?: Record<string, unknown>;
       }>;
+      pipeline?: string;
     }>();
     const rows = Array.isArray(body.companies) ? body.companies : [];
     if (rows.length === 0) return c.json({ error: "No rows to import" }, 400);
     if (rows.length > 2000) return c.json({ error: "Import is limited to 2000 rows at a time" }, 400);
+    const importPipeline = normalizePipeline(body.pipeline, DEFAULT_COMPANY_PIPELINE);
 
     // Keep only rows with a name; collapse to the first-seen row per name so a
     // duplicated name in the file resolves to one company (first wins).
     const byKey = new Map<string, {
-      name: string; domain: string; industry: string; phone: string; email: string; notes: string;
+      name: string; pipeline: PipelineKey; domain: string; industry: string; phone: string; email: string; notes: string;
       custom?: Record<string, unknown>;
     }>();
     for (const r of rows) {
@@ -1764,6 +1865,7 @@ app.post("/api/companies/import", async (c) => {
       if (byKey.has(key)) continue;
       byKey.set(key, {
         name,
+        pipeline: normalizePipeline(r.pipeline, importPipeline),
         domain: (r.domain || "").trim(),
         industry: (r.industry || "").trim(),
         phone: (r.phone || "").trim(),
@@ -1783,8 +1885,8 @@ app.post("/api/companies/import", async (c) => {
     for (const group of chunk(names, LOOKUP_CHUNK)) {
       const placeholders = group.map(() => "?").join(", ");
       const found = await query<{ name: string }>(
-        `SELECT name FROM companies WHERE name COLLATE NOCASE IN (${placeholders})`,
-        group,
+        `SELECT name FROM companies WHERE pipeline = ? AND name COLLATE NOCASE IN (${placeholders})`,
+        [importPipeline, ...group],
       );
       for (const co of found) existing.add(co.name.toLowerCase());
     }
@@ -1794,7 +1896,7 @@ app.post("/api/companies/import", async (c) => {
 
     // Bulk-insert new companies + mapped custom columns (chunk from col count).
     const custom = await resolveImportCustomColumns("company", fresh);
-    const builtinCols = ["id", "name", "domain", "industry", "phone", "email", "notes"];
+    const builtinCols = ["id", "name", "pipeline", "domain", "industry", "phone", "email", "notes"];
     const cols = [...builtinCols, ...custom.keys.map(quoteIdent)];
     const rowsPerStmt = Math.max(1, Math.floor(100 / cols.length));
     const rowPlaceholder = `(${cols.map(() => "?").join(", ")})`;
@@ -1804,7 +1906,7 @@ app.post("/api/companies/import", async (c) => {
       const placeholders = group.map(() => rowPlaceholder).join(", ");
       const params: unknown[] = [];
       for (const co of group) {
-        params.push(crypto.randomUUID(), co.name, co.domain, co.industry, co.phone, co.email, co.notes);
+        params.push(crypto.randomUUID(), co.name, co.pipeline, co.domain, co.industry, co.phone, co.email, co.notes);
         for (const k of custom.keys) params.push(coerceForImport(co.custom?.[k], custom.defByKey.get(k)!));
       }
       await run(`INSERT INTO companies (${cols.join(", ")}) VALUES ${placeholders}`, params);
