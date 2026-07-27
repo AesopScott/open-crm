@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS contacts (
   company_id TEXT REFERENCES companies(id) ON DELETE SET NULL,
   title TEXT DEFAULT '',
   status TEXT NOT NULL DEFAULT 'lead',
+  registration_code TEXT DEFAULT '',
   created_at TEXT DEFAULT (datetime('now')),
   updated_at TEXT DEFAULT (datetime('now'))
 );
@@ -99,6 +100,7 @@ CREATE INDEX IF NOT EXISTS idx_contacts_pipeline ON contacts(pipeline);
 CREATE INDEX IF NOT EXISTS idx_deals_pipeline ON deals(pipeline);
 CREATE INDEX IF NOT EXISTS idx_stages_pipeline ON stages(pipeline, position);
 CREATE INDEX IF NOT EXISTS idx_contacts_status ON contacts(status);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_contacts_registration_code ON contacts(registration_code) WHERE registration_code <> '';
 CREATE INDEX IF NOT EXISTS idx_deals_stage ON deals(stage);
 CREATE INDEX IF NOT EXISTS idx_activities_entity ON activities(entity_type, entity_id);
 CREATE INDEX IF NOT EXISTS idx_custom_field_defs_entity ON custom_field_defs(entity_type, position);

@@ -5,7 +5,7 @@ import { PageHeader, Avatar, EntityIcon, CategoryBadge, EmptyState } from "@/com
 import { ConnectionsIndicator } from "@/components/connections-indicator";
 import { ContactDialog } from "@/components/contacts/contact-dialog";
 import { ContactPreview } from "@/components/contacts/contact-preview";
-import { TableFilter, fieldsFromDefs } from "@/components/table-filter";
+import { TableFilter, fieldsFromDefs, type FilterField } from "@/components/table-filter";
 import { ImportDialog } from "@/components/import-dialog";
 import { contactImportConfig } from "@/lib/import-config";
 import { Button } from "@/components/ui/button";
@@ -20,18 +20,20 @@ import type { Contact } from "@/types";
 export function ContactsPage({ navigate }: { navigate: (to: string) => void }) {
   const { contacts, contactsPag, activePipeline, setContactsPage, setContactsSort, setContactsSearch, setContactsFilters, deleteContact, customFields } = useCrm();
   const pipeline = pipelineMeta(activePipeline);
+  const showRegistrationCode = activePipeline === "vip_registrants";
   const contactFields = customFields.filter((d) => d.entity_type === "contact");
-  const filterFields = fieldsFromDefs(
-    [
-      { key: "first_name", label: "First name", type: "text" },
-      { key: "last_name", label: "Last name", type: "text" },
-      { key: "email", label: "Email", type: "text" },
-      { key: "phone", label: "Phone", type: "text" },
-      { key: "title", label: "Title", type: "text" },
-      { key: "status", label: "Status", type: "text" },
-    ],
-    contactFields,
-  );
+  const builtInFilterFields: FilterField[] = [
+    { key: "first_name", label: "First name", type: "text" },
+    { key: "last_name", label: "Last name", type: "text" },
+    { key: "email", label: "Email", type: "text" },
+    { key: "phone", label: "Phone", type: "text" },
+    { key: "title", label: "Title", type: "text" },
+    { key: "status", label: "Status", type: "text" },
+  ];
+  if (showRegistrationCode) {
+    builtInFilterFields.splice(2, 0, { key: "registration_code", label: "Registration code", type: "text" });
+  }
+  const filterFields = fieldsFromDefs(builtInFilterFields, contactFields);
 
   const [search, setSearch] = useState(contactsPag.search);
   const [importOpen, setImportOpen] = useState(false);
@@ -120,6 +122,9 @@ export function ContactsPage({ navigate }: { navigate: (to: string) => void }) {
               <TableHeader>
                 <TableRow>
                   <SortHeader col="first_name" pag={contactsPag} onSort={setContactsSort}>Name</SortHeader>
+                  {showRegistrationCode && (
+                    <SortHeader col="registration_code" pag={contactsPag} onSort={setContactsSort}>Code</SortHeader>
+                  )}
                   <SortHeader col="email" pag={contactsPag} onSort={setContactsSort}>Email</SortHeader>
                   <SortHeader col="phone" pag={contactsPag} onSort={setContactsSort}>Phone</SortHeader>
                   <TableHead>Company</TableHead>
@@ -146,6 +151,15 @@ export function ContactsPage({ navigate }: { navigate: (to: string) => void }) {
                           <span className="truncate">{fullName || "—"}</span>
                         </button>
                       </TableCell>
+                      {showRegistrationCode && (
+                        <TableCell>
+                          {c.registration_code ? (
+                            <span className="tabular font-semibold text-foreground">{c.registration_code}</span>
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
+                          )}
+                        </TableCell>
+                      )}
                       <TableCell>
                         {c.email ? (
                           <a href={`mailto:${c.email}`} onClick={(e) => e.stopPropagation()} className="text-[var(--ring)] hover:underline">

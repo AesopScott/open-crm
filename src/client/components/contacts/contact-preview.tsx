@@ -29,6 +29,11 @@ export function ContactPreview({
       subtitle={contact.title || undefined}
     >
       <PreviewSection title="Details">
+        {contact.pipeline === "vip_registrants" && (
+          <PreviewField label="Registration code">
+            {contact.registration_code ? <span className="tabular font-semibold">{contact.registration_code}</span> : <Empty />}
+          </PreviewField>
+        )}
         <PreviewField label="Job title">{contact.title || <Empty />}</PreviewField>
         <PreviewField label="Email">
           {contact.email ? (

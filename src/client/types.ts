@@ -53,6 +53,7 @@ export interface Contact {
   company_id: string | null;
   title: string;
   status: string;
+  registration_code?: string;
   company_name?: string | null;
   company_domain?: string | null;
   custom?: Record<string, unknown>; // write payload; on reads, values are flat columns

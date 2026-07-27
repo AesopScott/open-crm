@@ -187,6 +187,14 @@ export function ContactDetail({ id, navigate }: { id: string; navigate: (to: str
               </div>
             </div>
             <dl className="grid gap-1.5 text-sm">
+              {contact.pipeline === "vip_registrants" && (
+                <div className="flex gap-2">
+                  <dt className="w-16 shrink-0 text-muted-foreground">Code</dt>
+                  <dd className="tabular font-semibold">
+                    {contact.registration_code || <span className="text-muted-foreground">—</span>}
+                  </dd>
+                </div>
+              )}
               <div className="flex gap-2">
                 <dt className="w-16 shrink-0 text-muted-foreground">Email</dt>
                 <dd>

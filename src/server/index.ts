@@ -179,10 +179,60 @@ type PipelineKey = typeof PIPELINES[number];
 const DEFAULT_CONTACT_PIPELINE: PipelineKey = "vip_registrants";
 const DEFAULT_COMPANY_PIPELINE: PipelineKey = "vendor_sponsors";
 const DEFAULT_DEAL_PIPELINE: PipelineKey = "vendor_sponsors";
+const REGISTRATION_CODE_DIGITS = 6;
 
 function normalizePipeline(value: unknown, fallback: PipelineKey = DEFAULT_CONTACT_PIPELINE): PipelineKey {
   const raw = typeof value === "string" ? value.trim() : "";
   return PIPELINES.includes(raw as PipelineKey) ? (raw as PipelineKey) : fallback;
+}
+
+function randomRegistrationCode(used = new Set<string>()): string {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    const code = String(Math.floor(Math.random() * 10 ** REGISTRATION_CODE_DIGITS)).padStart(REGISTRATION_CODE_DIGITS, "0");
+    if (!used.has(code)) {
+      used.add(code);
+      return code;
+    }
+  }
+  throw new Error("Unable to generate a unique registration code");
+}
+
+async function generateRegistrationCode(): Promise<string> {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    const code = randomRegistrationCode();
+    const existing = await get<{ id: string }>("SELECT id FROM contacts WHERE registration_code = ?", [code]);
+    if (!existing) return code;
+  }
+  throw new Error("Unable to generate a unique registration code");
+}
+
+async function assignRegistrationCodeIfMissing(contactId: string): Promise<void> {
+  const row = await get<{ pipeline: PipelineKey; registration_code: string | null }>(
+    "SELECT pipeline, registration_code FROM contacts WHERE id = ?",
+    [contactId],
+  );
+  if (!row || row.pipeline !== "vip_registrants" || row.registration_code) return;
+  await run("UPDATE contacts SET registration_code = ?, updated_at = datetime('now') WHERE id = ?", [
+    await generateRegistrationCode(),
+    contactId,
+  ]);
+}
+
+async function backfillVipRegistrationCodes(): Promise<void> {
+  const usedRows = await query<{ registration_code: string }>(
+    "SELECT registration_code FROM contacts WHERE registration_code <> ''",
+  );
+  const used = new Set(usedRows.map((row) => row.registration_code));
+  const missing = await query<{ id: string }>(
+    "SELECT id FROM contacts WHERE pipeline = 'vip_registrants' AND (registration_code IS NULL OR registration_code = '')",
+  );
+
+  for (const row of missing) {
+    await run("UPDATE contacts SET registration_code = ?, updated_at = datetime('now') WHERE id = ?", [
+      randomRegistrationCode(used),
+      row.id,
+    ]);
+  }
 }
 
 const CompanySchema = z.object({
@@ -210,6 +260,7 @@ const ContactSchema = z.object({
   company_id: z.string().nullable(),
   title: z.string(),
   status: z.string(),
+  registration_code: z.string().optional(),
   company_name: z.string().nullable().optional(),
   company_domain: z.string().nullable().optional(),
   created_at: z.string(),
@@ -295,10 +346,13 @@ async function ensurePipelineSchema(): Promise<void> {
   if (pipelineSchemaReady) return;
   await ensureColumn("companies", "pipeline", "TEXT NOT NULL DEFAULT 'vendor_sponsors'");
   await ensureColumn("contacts", "pipeline", "TEXT NOT NULL DEFAULT 'vip_registrants'");
+  await ensureColumn("contacts", "registration_code", "TEXT DEFAULT ''");
   await ensureColumn("deals", "pipeline", "TEXT NOT NULL DEFAULT 'vendor_sponsors'");
   await ensureColumn("stages", "pipeline", "TEXT NOT NULL DEFAULT 'vendor_sponsors'");
+  await backfillVipRegistrationCodes();
   await run("CREATE INDEX IF NOT EXISTS idx_companies_pipeline ON companies(pipeline)");
   await run("CREATE INDEX IF NOT EXISTS idx_contacts_pipeline ON contacts(pipeline)");
+  await run("CREATE UNIQUE INDEX IF NOT EXISTS idx_contacts_registration_code ON contacts(registration_code) WHERE registration_code <> ''");
   await run("CREATE INDEX IF NOT EXISTS idx_deals_pipeline ON deals(pipeline)");
   await run("CREATE INDEX IF NOT EXISTS idx_stages_pipeline ON stages(pipeline, position)");
   pipelineSchemaReady = true;
@@ -633,8 +687,8 @@ app.openapi(listContacts, async (c) => {
     if (search) {
       // Match the contact's own fields OR their company name, so searching a
       // company surfaces its contacts (both queries LEFT JOIN companies as `co`).
-      where.push("(ct.first_name LIKE ? OR ct.last_name LIKE ? OR ct.email LIKE ? OR ct.title LIKE ? OR co.name LIKE ?)");
-      params.push(`%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`);
+      where.push("(ct.first_name LIKE ? OR ct.last_name LIKE ? OR ct.email LIKE ? OR ct.title LIKE ? OR ct.registration_code LIKE ? OR co.name LIKE ?)");
+      params.push(`%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`);
     }
     if (status) {
       where.push("ct.status = ?");
@@ -725,9 +779,10 @@ app.openapi(createContact, async (c) => {
     }
 
     const id = crypto.randomUUID();
+    const registrationCode = pipeline === "vip_registrants" ? await generateRegistrationCode() : "";
     await run(
-      "INSERT INTO contacts (id, first_name, pipeline, last_name, email, phone, company_id, title, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-      [id, firstName, pipeline, (body.last_name || "").trim(), (body.email || "").trim(), (body.phone || "").trim(), companyId, (body.title || "").trim(), (body.status || "lead").trim()],
+      "INSERT INTO contacts (id, first_name, pipeline, last_name, email, phone, company_id, title, status, registration_code) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      [id, firstName, pipeline, (body.last_name || "").trim(), (body.email || "").trim(), (body.phone || "").trim(), companyId, (body.title || "").trim(), (body.status || "lead").trim(), registrationCode],
     );
 
     await applyCustomValues("contact", "contacts", id, customValues);
@@ -813,6 +868,7 @@ app.openapi(updateContact, async (c) => {
       await run("UPDATE contacts SET " + fields.join(", ") + " WHERE id = ?", params);
     }
     await applyCustomValues("contact", "contacts", id, customValues);
+    await assignRegistrationCodeIfMissing(id);
 
     const updated = await get<Contact>(
       `SELECT ct.*, co.name as company_name, co.domain as company_domain
@@ -1705,6 +1761,7 @@ app.post("/api/contacts/import", async (c) => {
           title: (r.title || "").trim(),
           status: CONTACT_STATUSES.includes((r.status || "").trim()) ? (r.status as string).trim() : "lead",
           pipeline: normalizePipeline(r.pipeline, importPipeline),
+          registration_code: "",
           company,
           company_domain: (r.company_domain || "").trim(),
           company_industry: (r.company_industry || "").trim(),
@@ -1716,6 +1773,14 @@ app.post("/api/contacts/import", async (c) => {
       .filter((r) => r.first_name);
     const skipped = rows.length - clean.length;
     if (clean.length === 0) return c.json({ error: "No rows had a first name to import" }, 400);
+
+    const usedRegistrationCodes = new Set(
+      (await query<{ registration_code: string }>("SELECT registration_code FROM contacts WHERE registration_code <> ''"))
+        .map((row) => row.registration_code),
+    );
+    for (const row of clean) {
+      row.registration_code = row.pipeline === "vip_registrants" ? randomRegistrationCode(usedRegistrationCodes) : "";
+    }
 
     // ── Resolve company names → ids (set-based, case-insensitive) ──
     // Distinct names, keeping the first-seen original casing for any we create.
@@ -1800,7 +1865,7 @@ app.post("/api/contacts/import", async (c) => {
     // Mapped custom-field columns ride along in the same INSERT. Chunk size is
     // derived from the real column count so bound params stay ≤ 100 (D1 cap).
     const custom = await resolveImportCustomColumns("contact", clean);
-    const builtinCols = ["id", "first_name", "pipeline", "last_name", "email", "phone", "company_id", "title", "status"];
+    const builtinCols = ["id", "first_name", "pipeline", "last_name", "email", "phone", "company_id", "title", "status", "registration_code"];
     const cols = [...builtinCols, ...custom.keys.map(quoteIdent)];
     const rowsPerStmt = Math.max(1, Math.floor(100 / cols.length));
     const rowPlaceholder = `(${cols.map(() => "?").join(", ")})`;
@@ -1815,7 +1880,7 @@ app.post("/api/contacts/import", async (c) => {
           : r.inferDomain
             ? companyIdByDomain.get(`${r.pipeline}:${r.inferDomain}`) ?? null
             : null;
-        params.push(crypto.randomUUID(), r.first_name, r.pipeline, r.last_name, r.email, r.phone, companyId, r.title, r.status);
+        params.push(crypto.randomUUID(), r.first_name, r.pipeline, r.last_name, r.email, r.phone, companyId, r.title, r.status, r.registration_code);
         for (const k of custom.keys) params.push(coerceForImport(r.custom?.[k], custom.defByKey.get(k)!));
       }
       await run(`INSERT INTO contacts (${cols.join(", ")}) VALUES ${placeholders}`, params);

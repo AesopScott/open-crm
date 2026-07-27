@@ -57,6 +57,7 @@ const BUILTINS: Record<EntityType, BuiltinAttr[]> = {
     { label: "Company", key: "company_id", type: "Record", icon: Link2 },
     { label: "Title", key: "title", type: "Text", icon: TypeIcon },
     { label: "Status", key: "status", type: "Status", icon: CircleDot, constraints: "Required" },
+    { label: "Registration code", key: "registration_code", type: "Text", icon: TypeIcon, constraints: "System generated" },
     { label: "Created at", key: "created_at", type: "Timestamp", icon: Calendar },
   ],
   company: [
