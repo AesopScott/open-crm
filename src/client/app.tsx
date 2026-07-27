@@ -9,6 +9,7 @@ import { ContactDetail } from "./components/contacts/contact-detail";
 import { CompaniesPage } from "./components/companies/companies-page";
 import { DealsBoard } from "./components/deals/deals-board";
 import { PropertiesPage } from "./components/properties/properties-page";
+import { VipInviteCodesPage } from "./components/vip-invite-codes-page";
 
 export function App() {
   const isAgent = document.documentElement.hasAttribute("data-agent");
@@ -26,6 +27,7 @@ export function App() {
           ) : (
             <>
               {route.name === "contacts" && <ContactsPage navigate={navigate} />}
+              {route.name === "invite-codes" && <VipInviteCodesPage />}
               {route.name === "contact" && <ContactDetail id={route.id} navigate={navigate} />}
               {route.name === "companies" && <CompaniesPage />}
               {route.name === "deals" && <DealsBoard />}

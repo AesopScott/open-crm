@@ -1,5 +1,5 @@
 import { createContext, useContext } from "react";
-import type { View, Contact, Company, Deal, Stats, PaginatedState, StageDef, Activity, ConnectionStatus, EntityType, CustomFieldDef, ImportRow, ImportEntity, ImportResult, PipelineKey } from "./types";
+import type { View, Contact, Company, Deal, Stats, PaginatedState, StageDef, Activity, ConnectionStatus, EntityType, CustomFieldDef, ImportRow, ImportEntity, ImportResult, PipelineKey, VipInviteCode } from "./types";
 
 export interface CrmContextValue {
   isAgent: boolean;
@@ -18,6 +18,12 @@ export interface CrmContextValue {
   updateContact: (id: string, data: Partial<Contact>) => Promise<void>;
   deleteContact: (id: string) => Promise<void>;
   fetchContact: (id: string) => Promise<Contact | null>;
+
+  // VIP invite codes
+  inviteCodes: VipInviteCode[];
+  refetchInviteCodes: () => Promise<void>;
+  generateInviteCodes: (count: number) => Promise<string[]>;
+  disableInviteCode: (code: string) => Promise<void>;
 
   // Companies
   companies: Company[];

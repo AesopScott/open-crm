@@ -4,6 +4,7 @@ const appBase = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 export type Route =
   | { name: "contacts" }
+  | { name: "invite-codes" }
   | { name: "contact"; id: string }
   | { name: "companies" }
   | { name: "deals" }
@@ -12,6 +13,7 @@ export type Route =
 
 function parse(path: string): Route {
   if (path === "/" || path === "/contacts") return { name: "contacts" };
+  if (path === "/invite-codes") return { name: "invite-codes" };
   const m = path.match(/^\/contacts\/([^/]+)$/);
   if (m) return { name: "contact", id: decodeURIComponent(m[1]) };
   if (path === "/companies") return { name: "companies" };

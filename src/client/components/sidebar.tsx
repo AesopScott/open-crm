@@ -1,4 +1,4 @@
-import { Users, Building2, CircleDollarSign, SlidersHorizontal } from "lucide-react";
+import { Users, Building2, CircleDollarSign, SlidersHorizontal, KeyRound } from "lucide-react";
 import { useCrm } from "../context";
 import { PIPELINES } from "@/lib/pipelines";
 import { cn } from "../lib/utils";
@@ -6,6 +6,7 @@ import type { Route } from "../hooks/use-router";
 
 const NAV = [
   { key: "contacts", path: "/contacts", label: "Contacts", icon: Users },
+  { key: "invite-codes", path: "/invite-codes", label: "Invite codes", icon: KeyRound },
   { key: "companies", path: "/companies", label: "Companies", icon: Building2 },
   { key: "deals", path: "/deals", label: "Deals", icon: CircleDollarSign },
 ] as const;
@@ -16,7 +17,7 @@ const SETTINGS_NAV = [
 
 export function Sidebar({ route, navigate }: { route: Route; navigate: (to: string) => void }) {
   const { stats, activePipeline, setActivePipeline } = useCrm();
-  const counts: Record<string, number> = { contacts: stats.contacts, companies: stats.companies, deals: stats.deals };
+  const counts: Record<string, number | undefined> = { contacts: stats.contacts, companies: stats.companies, deals: stats.deals };
   const activeKey = route.name === "contact" ? "contacts" : route.name;
 
   return (
@@ -70,9 +71,11 @@ export function Sidebar({ route, navigate }: { route: Route; navigate: (to: stri
             >
               <item.icon className="size-4 shrink-0" />
               <span className="flex-1 text-left">{item.label}</span>
-              <span className={cn("tabular text-xs", active ? "text-sidebar-accent-foreground" : "text-muted-foreground")}>
-                {counts[item.key]}
-              </span>
+              {counts[item.key] !== undefined && (
+                <span className={cn("tabular text-xs", active ? "text-sidebar-accent-foreground" : "text-muted-foreground")}>
+                  {counts[item.key]}
+                </span>
+              )}
             </button>
           );
         })}

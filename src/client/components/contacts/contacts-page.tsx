@@ -61,9 +61,9 @@ export function ContactsPage({ navigate }: { navigate: (to: string) => void }) {
   const totalPages = Math.max(1, Math.ceil(contactsPag.total / contactsPag.limit));
 
   const addButton = (
-    <Button size="sm" onClick={openCreate}>
+    <Button size="sm" onClick={showRegistrationCode ? () => navigate("/invite-codes") : openCreate}>
       <Plus className="size-4" />
-      Add contact
+      {showRegistrationCode ? "Generate invite code" : "Add contact"}
     </Button>
   );
 
@@ -93,16 +93,20 @@ export function ContactsPage({ navigate }: { navigate: (to: string) => void }) {
           />
         </div>
         <TableFilter fields={filterFields} filters={contactsPag.filters} onChange={setContactsFilters} />
-        <Button size="sm" variant="outline" onClick={() => setImportOpen(true)}>
-          <Upload className="size-4" />
-          Import
-        </Button>
+        {!showRegistrationCode && (
+          <Button size="sm" variant="outline" onClick={() => setImportOpen(true)}>
+            <Upload className="size-4" />
+            Import
+          </Button>
+        )}
         {addButton}
       </PageHeader>
 
       {contacts.length === 0 ? (
         <EmptyState
-          title={`No ${pipeline.contactLabel.toLowerCase()}s yet. Add your first, or import a CSV.`}
+          title={showRegistrationCode
+            ? "No VIP registrants yet. Generate an invite code before sending someone to registration."
+            : `No ${pipeline.contactLabel.toLowerCase()}s yet. Add your first, or import a CSV.`}
           action={
             <div className="flex flex-col items-center gap-2">
               {addButton}

@@ -61,6 +61,17 @@ export interface Contact {
   updated_at: string;
 }
 
+export interface VipInviteCode {
+  code: string;
+  status: "available" | "used" | "disabled";
+  contact_id: string | null;
+  contact_name?: string | null;
+  contact_email?: string | null;
+  created_at: string;
+  used_at: string;
+  disabled_at: string;
+}
+
 export interface Deal {
   id: string;
   name: string;

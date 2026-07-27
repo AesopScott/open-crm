@@ -29,6 +29,15 @@ CREATE TABLE IF NOT EXISTS contacts (
   updated_at TEXT DEFAULT (datetime('now'))
 );
 
+CREATE TABLE IF NOT EXISTS vip_invite_codes (
+  code TEXT PRIMARY KEY,
+  status TEXT NOT NULL DEFAULT 'available',
+  contact_id TEXT REFERENCES contacts(id) ON DELETE SET NULL,
+  created_at TEXT DEFAULT (datetime('now')),
+  used_at TEXT DEFAULT '',
+  disabled_at TEXT DEFAULT ''
+);
+
 CREATE TABLE IF NOT EXISTS deals (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
@@ -97,6 +106,7 @@ CREATE INDEX IF NOT EXISTS idx_contacts_company ON contacts(company_id);
 CREATE INDEX IF NOT EXISTS idx_deals_contact ON deals(contact_id);
 CREATE INDEX IF NOT EXISTS idx_companies_pipeline ON companies(pipeline);
 CREATE INDEX IF NOT EXISTS idx_contacts_pipeline ON contacts(pipeline);
+CREATE INDEX IF NOT EXISTS idx_vip_invite_codes_status ON vip_invite_codes(status, created_at);
 CREATE INDEX IF NOT EXISTS idx_deals_pipeline ON deals(pipeline);
 CREATE INDEX IF NOT EXISTS idx_stages_pipeline ON stages(pipeline, position);
 CREATE INDEX IF NOT EXISTS idx_contacts_status ON contacts(status);

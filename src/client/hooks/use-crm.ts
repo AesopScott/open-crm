@@ -2,7 +2,7 @@ import { useState, useCallback, useEffect, type Dispatch, type SetStateAction } 
 import { api } from "../api";
 import type {
   Contact, Company, Deal, Stats, PaginatedState, StageDef,
-  Activity, ConnectionStatus, EntityType, CustomFieldDef, ImportRow, ImportEntity, ImportResult, PipelineKey,
+  Activity, ConnectionStatus, EntityType, CustomFieldDef, ImportRow, ImportEntity, ImportResult, PipelineKey, VipInviteCode,
 } from "../types";
 import type { CrmContextValue } from "../context";
 import { DEFAULT_PIPELINE } from "@/lib/pipelines";
@@ -28,6 +28,7 @@ export function useCrmState(isAgent: boolean): CrmContextValue {
 
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [contactsPag, setContactsPag] = useState<PaginatedState>(defaultPag("created_at"));
+  const [inviteCodes, setInviteCodes] = useState<VipInviteCode[]>([]);
 
   const [companies, setCompanies] = useState<Company[]>([]);
   const [companiesPag, setCompaniesPag] = useState<PaginatedState>(defaultPag("created_at"));
@@ -52,6 +53,11 @@ export function useCrmState(isAgent: boolean): CrmContextValue {
     setContacts(data.contacts);
     setContactsPag((prev) => ({ ...prev, total: data.total }));
   }, [activePipeline]);
+
+  const refetchInviteCodes = useCallback(async () => {
+    const data = await api<{ codes: VipInviteCode[] }>("GET", "/api/vip-invite-codes");
+    setInviteCodes(data.codes);
+  }, []);
 
   const fetchCompanies = useCallback(async (pag: PaginatedState) => {
     const data = await api<{ companies: Company[]; total: number }>("GET", `/api/companies?${pagParams(pag, activePipeline)}`);
@@ -98,7 +104,7 @@ export function useCrmState(isAgent: boolean): CrmContextValue {
         await Promise.all([
           fetchStats(), fetchContacts(contactsPag), fetchCompanies(companiesPag),
           fetchDeals(dealsPag), fetchBoardDeals(), fetchConnections(),
-          refetchCustomFields(), refetchStages(),
+          refetchCustomFields(), refetchStages(), refetchInviteCodes(),
         ]);
       } catch (err) {
         setError((err as Error).message);
@@ -163,6 +169,17 @@ export function useCrmState(isAgent: boolean): CrmContextValue {
       return null;
     }
   }, []);
+
+  const generateInviteCodes = useCallback(async (count: number): Promise<string[]> => {
+    const data = await api<{ codes: string[] }>("POST", "/api/vip-invite-codes", { count });
+    await refetchInviteCodes();
+    return data.codes;
+  }, [refetchInviteCodes]);
+
+  const disableInviteCode = useCallback(async (code: string) => {
+    await api("DELETE", `/api/vip-invite-codes/${encodeURIComponent(code)}`);
+    await refetchInviteCodes();
+  }, [refetchInviteCodes]);
 
   // ── Companies CRUD ──
 
@@ -244,6 +261,7 @@ export function useCrmState(isAgent: boolean): CrmContextValue {
     isAgent, activePipeline, setActivePipeline, stats,
     contacts, contactsPag, setContactsPage: cSet.setPage, setContactsSort: cSet.setSort, setContactsSearch: cSet.setSearch, setContactsFilters: cSet.setFilters,
     addContact, updateContact, deleteContact, fetchContact,
+    inviteCodes, refetchInviteCodes, generateInviteCodes, disableInviteCode,
     companies, companiesPag, setCompaniesPage: coSet.setPage, setCompaniesSort: coSet.setSort, setCompaniesSearch: coSet.setSearch, setCompaniesFilters: coSet.setFilters,
     addCompany, updateCompany, deleteCompany,
     deals, dealsPag, dealsTotalValue, setDealsPage: dSet.setPage, setDealsSort: dSet.setSort, setDealsSearch: dSet.setSearch,
