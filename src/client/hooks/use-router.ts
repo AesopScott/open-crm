@@ -1,5 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 
+const appBase = import.meta.env.BASE_URL.replace(/\/$/, "");
+
 export type Route =
   | { name: "contacts" }
   | { name: "contact"; id: string }
@@ -18,17 +20,31 @@ function parse(path: string): Route {
   return { name: "not-found" };
 }
 
+function stripBase(path: string): string {
+  if (!appBase) return path;
+  if (path === appBase) return "/";
+  if (path.startsWith(`${appBase}/`)) return path.slice(appBase.length) || "/";
+  return path;
+}
+
+function withBase(path: string): string {
+  if (!appBase) return path;
+  if (path === "/") return `${appBase}/`;
+  return `${appBase}${path.startsWith("/") ? path : `/${path}`}`;
+}
+
 export function useRouter() {
-  const [path, setPath] = useState<string>(() => window.location.pathname);
+  const [path, setPath] = useState<string>(() => stripBase(window.location.pathname));
 
   const navigate = useCallback((to: string) => {
-    if (to === window.location.pathname) return;
-    window.history.pushState(null, "", to);
+    const href = withBase(to);
+    if (href === window.location.pathname) return;
+    window.history.pushState(null, "", href);
     setPath(to);
   }, []);
 
   useEffect(() => {
-    const handler = () => setPath(window.location.pathname);
+    const handler = () => setPath(stripBase(window.location.pathname));
     window.addEventListener("popstate", handler);
     return () => window.removeEventListener("popstate", handler);
   }, []);

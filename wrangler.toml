@@ -1,9 +1,23 @@
 name = "open-crm"
 main = "src/server/index.ts"
-compatibility_date = "2025-04-01"
+compatibility_date = "2026-07-27"
 compatibility_flags = ["nodejs_compat"]
+
+[[routes]]
+pattern = "mojoaisummits.com/crm"
+zone_name = "mojoaisummits.com"
+
+[[routes]]
+pattern = "mojoaisummits.com/crm/*"
+zone_name = "mojoaisummits.com"
+
+[assets]
+directory = "./dist"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+run_worker_first = true
 
 [[d1_databases]]
 binding = "DB"
 database_name = "open-crm-db"
-database_id = "local"
+database_id = "db83d222-70b2-4d10-82e0-ef5b523421e3"

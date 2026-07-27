@@ -23,6 +23,7 @@ import {
 type Env = {
   Bindings: {
     DB: D1Database;
+    ASSETS: Fetcher;
     CREDENTIALS?: CredentialBinding;
     CLAWNIFY_ORG_ID?: string;
     SLACK_CHANNEL?: string;
@@ -1880,4 +1881,35 @@ app.delete("/api/custom-fields/:id", async (c) => {
   return c.json({ ok: true }, 200);
 });
 
-export default app;
+const CRM_BASE_PATH = "/crm";
+
+function stripCrmBase(request: Request): Request {
+  const url = new URL(request.url);
+  if (url.pathname === CRM_BASE_PATH) {
+    url.pathname = "/";
+  } else if (url.pathname.startsWith(`${CRM_BASE_PATH}/`)) {
+    url.pathname = url.pathname.slice(CRM_BASE_PATH.length) || "/";
+  }
+  return new Request(url.toString(), request);
+}
+
+export default {
+  fetch(request, env, ctx) {
+    const url = new URL(request.url);
+
+    if (url.pathname === CRM_BASE_PATH) {
+      url.pathname = `${CRM_BASE_PATH}/`;
+      return Response.redirect(url.toString(), 308);
+    }
+
+    if (url.pathname.startsWith(`${CRM_BASE_PATH}/api`) || url.pathname === `${CRM_BASE_PATH}/llms.txt`) {
+      return app.fetch(stripCrmBase(request), env, ctx);
+    }
+
+    if (url.pathname.startsWith(`${CRM_BASE_PATH}/`)) {
+      return env.ASSETS.fetch(stripCrmBase(request));
+    }
+
+    return new Response("Not found", { status: 404 });
+  },
+} satisfies ExportedHandler<Env["Bindings"]>;
