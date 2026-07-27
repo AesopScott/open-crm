@@ -63,11 +63,13 @@ export interface Contact {
 
 export interface VipInviteCode {
   code: string;
-  status: "available" | "used" | "disabled";
+  status: "available" | "used" | "disabled" | "expired";
+  registration_url: string;
   contact_id: string | null;
   contact_name?: string | null;
   contact_email?: string | null;
   created_at: string;
+  expires_at: string;
   used_at: string;
   disabled_at: string;
 }

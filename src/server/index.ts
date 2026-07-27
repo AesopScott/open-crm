@@ -180,6 +180,7 @@ const DEFAULT_CONTACT_PIPELINE: PipelineKey = "vip_registrants";
 const DEFAULT_COMPANY_PIPELINE: PipelineKey = "vendor_sponsors";
 const DEFAULT_DEAL_PIPELINE: PipelineKey = "vendor_sponsors";
 const REGISTRATION_CODE_DIGITS = 6;
+const VIP_INVITE_EXPIRES_HOURS = 48;
 
 function normalizePipeline(value: unknown, fallback: PipelineKey = DEFAULT_CONTACT_PIPELINE): PipelineKey {
   const raw = typeof value === "string" ? value.trim() : "";
@@ -215,9 +216,21 @@ async function generateVipInviteCode(): Promise<string> {
   throw new Error("Unable to generate a unique invite code");
 }
 
-async function vipInviteCode(code: string): Promise<{ code: string; status: string; contact_id: string | null } | null> {
-  return (await get<{ code: string; status: string; contact_id: string | null }>(
-    "SELECT code, status, contact_id FROM vip_invite_codes WHERE code = ?",
+function vipRegistrationUrl(code: string, requestUrl: string): string {
+  const url = new URL("/vip-registration/", requestUrl);
+  url.searchParams.set("invite", code);
+  return url.toString();
+}
+
+async function vipInviteCode(code: string): Promise<{ code: string; status: string; contact_id: string | null; expires_at: string } | null> {
+  return (await get<{ code: string; status: string; contact_id: string | null; expires_at: string }>(
+    `SELECT
+       code,
+       CASE WHEN status = 'available' AND expires_at <= datetime('now') THEN 'expired' ELSE status END as status,
+       contact_id,
+       expires_at
+     FROM vip_invite_codes
+     WHERE code = ?`,
     [code],
   )) ?? null;
 }
@@ -365,6 +378,7 @@ async function ensurePipelineSchema(): Promise<void> {
       status TEXT NOT NULL DEFAULT 'available',
       contact_id TEXT REFERENCES contacts(id) ON DELETE SET NULL,
       created_at TEXT DEFAULT (datetime('now')),
+      expires_at TEXT DEFAULT (datetime('now', '+48 hours')),
       used_at TEXT DEFAULT '',
       disabled_at TEXT DEFAULT ''
     )`,
@@ -372,6 +386,8 @@ async function ensurePipelineSchema(): Promise<void> {
   await ensureColumn("companies", "pipeline", "TEXT NOT NULL DEFAULT 'vendor_sponsors'");
   await ensureColumn("contacts", "pipeline", "TEXT NOT NULL DEFAULT 'vip_registrants'");
   await ensureColumn("contacts", "registration_code", "TEXT DEFAULT ''");
+  await ensureColumn("vip_invite_codes", "expires_at", "TEXT DEFAULT ''");
+  await run(`UPDATE vip_invite_codes SET expires_at = datetime(created_at, '+${VIP_INVITE_EXPIRES_HOURS} hours') WHERE expires_at IS NULL OR expires_at = ''`);
   await ensureColumn("deals", "pipeline", "TEXT NOT NULL DEFAULT 'vendor_sponsors'");
   await ensureColumn("stages", "pipeline", "TEXT NOT NULL DEFAULT 'vendor_sponsors'");
   await run("CREATE INDEX IF NOT EXISTS idx_companies_pipeline ON companies(pipeline)");
@@ -668,7 +684,11 @@ app.get("/api/vip-invite-codes", async (c) => {
     const status = cleanString(c.req.query("status"), 20);
     const where: string[] = [];
     const params: unknown[] = [];
-    if (status && ["available", "used", "disabled"].includes(status)) {
+    if (status === "available") {
+      where.push("v.status = 'available' AND v.expires_at > datetime('now')");
+    } else if (status === "expired") {
+      where.push("v.status = 'available' AND v.expires_at <= datetime('now')");
+    } else if (status && ["used", "disabled"].includes(status)) {
       where.push("v.status = ?");
       params.push(status);
     }
@@ -676,23 +696,44 @@ app.get("/api/vip-invite-codes", async (c) => {
     const codes = await query<{
       code: string;
       status: string;
+      registration_url: string;
       contact_id: string | null;
       created_at: string;
+      expires_at: string;
       used_at: string;
       disabled_at: string;
       contact_name: string | null;
       contact_email: string | null;
     }>(
-      `SELECT v.*, TRIM(COALESCE(ct.first_name, '') || ' ' || COALESCE(ct.last_name, '')) as contact_name, ct.email as contact_email
+      `SELECT
+         v.code,
+         CASE WHEN v.status = 'available' AND v.expires_at <= datetime('now') THEN 'expired' ELSE v.status END as status,
+         v.contact_id,
+         v.created_at,
+         v.expires_at,
+         v.used_at,
+         v.disabled_at,
+         TRIM(COALESCE(ct.first_name, '') || ' ' || COALESCE(ct.last_name, '')) as contact_name,
+         ct.email as contact_email
        FROM vip_invite_codes v
        LEFT JOIN contacts ct ON ct.id = v.contact_id
        ${whereSQL}
        ORDER BY
-         CASE v.status WHEN 'available' THEN 0 WHEN 'used' THEN 1 ELSE 2 END,
+         CASE
+           WHEN v.status = 'available' AND v.expires_at > datetime('now') THEN 0
+           WHEN v.status = 'available' THEN 1
+           WHEN v.status = 'used' THEN 2
+           ELSE 3
+         END,
          v.created_at DESC`,
       params,
     );
-    return c.json({ codes }, 200);
+    return c.json({
+      codes: codes.map((code) => ({
+        ...code,
+        registration_url: vipRegistrationUrl(code.code, c.req.url),
+      })),
+    }, 200);
   } catch (err: unknown) {
     return c.json({ error: (err as Error).message }, 500);
   }
@@ -702,13 +743,16 @@ app.post("/api/vip-invite-codes", async (c) => {
   try {
     const body = await c.req.json<{ count?: number }>().catch((): { count?: number } => ({}));
     const count = Math.min(100, Math.max(1, Math.floor(Number(body.count || 1))));
-    const codes: string[] = [];
+    const links: string[] = [];
     for (let i = 0; i < count; i += 1) {
       const code = await generateVipInviteCode();
-      await run("INSERT INTO vip_invite_codes (code) VALUES (?)", [code]);
-      codes.push(code);
+      await run(
+        `INSERT INTO vip_invite_codes (code, expires_at) VALUES (?, datetime('now', '+${VIP_INVITE_EXPIRES_HOURS} hours'))`,
+        [code],
+      );
+      links.push(vipRegistrationUrl(code, c.req.url));
     }
-    return c.json({ codes }, 201);
+    return c.json({ links }, 201);
   } catch (err: unknown) {
     return c.json({ error: (err as Error).message }, 500);
   }
@@ -719,8 +763,8 @@ app.delete("/api/vip-invite-codes/:code", async (c) => {
     const code = normalizeRegistrationCode(c.req.param("code"));
     if (code.length !== REGISTRATION_CODE_DIGITS) return c.json({ error: "Invalid code" }, 400);
     const row = await vipInviteCode(code);
-    if (!row) return c.json({ error: "Invite code not found" }, 404);
-    if (row.status === "used") return c.json({ error: "Used invite codes cannot be disabled" }, 409);
+    if (!row) return c.json({ error: "Invite link not found" }, 404);
+    if (row.status === "used") return c.json({ error: "Used invite links cannot be disabled" }, 409);
     await run("UPDATE vip_invite_codes SET status = 'disabled', disabled_at = datetime('now') WHERE code = ?", [code]);
     return c.json({ ok: true }, 200);
   } catch (err: unknown) {
@@ -731,12 +775,15 @@ app.delete("/api/vip-invite-codes/:code", async (c) => {
 app.get("/api/public/vip-invite-codes/:code", async (c) => {
   try {
     const code = normalizeRegistrationCode(c.req.param("code"));
-    if (code.length !== REGISTRATION_CODE_DIGITS) return c.json({ ok: false, error: "Enter a valid six-digit invite code." }, 400);
+    if (code.length !== REGISTRATION_CODE_DIGITS) return c.json({ ok: false, error: "Open a valid VIP registration link." }, 400);
     const row = await vipInviteCode(code);
     if (!row || row.status !== "available") {
-      return c.json({ ok: false, error: "That invite code is invalid or has already been used." }, 404);
+      const reason = row?.status === "expired"
+        ? "That registration link has expired. Ask MOJO AI Summits for a new link."
+        : "That invite link is invalid or has already been used.";
+      return c.json({ ok: false, error: reason }, 404);
     }
-    return c.json({ ok: true }, 200);
+    return c.json({ ok: true, expires_at: row.expires_at }, 200);
   } catch (err: unknown) {
     return c.json({ ok: false, error: (err as Error).message }, 500);
   }
@@ -757,10 +804,13 @@ app.post("/api/public/vip-registration", async (c) => {
     const isPresenter = body.isPresenter === true || body.isPresenter === "true";
     const isRoundtableLeader = body.isRoundtableLeader === true || body.isRoundtableLeader === "true";
 
-    if (inviteCode.length !== REGISTRATION_CODE_DIGITS) return c.json({ error: "Enter a valid six-digit invite code." }, 400);
+    if (inviteCode.length !== REGISTRATION_CODE_DIGITS) return c.json({ error: "Open a valid VIP registration link." }, 400);
     const invite = await vipInviteCode(inviteCode);
     if (!invite || invite.status !== "available") {
-      return c.json({ error: "That invite code is invalid or has already been used." }, 403);
+      const reason = invite?.status === "expired"
+        ? "That registration link has expired. Ask MOJO AI Summits for a new link."
+        : "That invite link is invalid or has already been used.";
+      return c.json({ error: reason }, 403);
     }
     if (!name) return c.json({ error: "Name is required." }, 400);
     if (!email) return c.json({ error: "Company email is required." }, 400);
@@ -785,12 +835,12 @@ app.post("/api/public/vip-registration", async (c) => {
     );
 
     const update = await run(
-      "UPDATE vip_invite_codes SET status = 'used', contact_id = ?, used_at = datetime('now') WHERE code = ? AND status = 'available'",
+      "UPDATE vip_invite_codes SET status = 'used', contact_id = ?, used_at = datetime('now') WHERE code = ? AND status = 'available' AND expires_at > datetime('now')",
       [id, inviteCode],
     );
     if (update.changes === 0) {
       await run("DELETE FROM contacts WHERE id = ?", [id]);
-      return c.json({ error: "That invite code was just used. Ask MOJO AI Summits for a new code." }, 409);
+      return c.json({ error: "That registration link is no longer available. Ask MOJO AI Summits for a new link." }, 409);
     }
 
     await logActivity(
@@ -798,7 +848,7 @@ app.post("/api/public/vip-registration", async (c) => {
       id,
       "note",
       [
-        `VIP registration submitted with invite code ${inviteCode}.`,
+        `VIP registration submitted with invite link ID ${inviteCode}.`,
         `Phone verification: ${phoneVerificationStatus}.`,
         isPresenter ? "Role: Presenter." : "",
         isRoundtableLeader ? "Role: Round table leader." : "",

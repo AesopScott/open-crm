@@ -16,6 +16,7 @@ export function VipInviteCodesPage() {
 
   const summary = useMemo(() => ({
     available: inviteCodes.filter((code) => code.status === "available").length,
+    expired: inviteCodes.filter((code) => code.status === "expired").length,
     used: inviteCodes.filter((code) => code.status === "used").length,
     disabled: inviteCodes.filter((code) => code.status === "disabled").length,
   }), [inviteCodes]);
@@ -23,17 +24,17 @@ export function VipInviteCodesPage() {
   const generate = async () => {
     setBusy(true);
     try {
-      const codes = await generateInviteCodes(count);
-      setLastGenerated(codes);
+      const links = await generateInviteCodes(count);
+      setLastGenerated(links);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to generate invite codes");
+      setError(err instanceof Error ? err.message : "Failed to generate invite links");
     } finally {
       setBusy(false);
     }
   };
 
-  const copy = async (codes: string[]) => {
-    await navigator.clipboard.writeText(codes.join("\n")).catch(() => undefined);
+  const copy = async (values: string[]) => {
+    await navigator.clipboard.writeText(values.join("\n")).catch(() => undefined);
   };
 
   const disable = async (code: VipInviteCode) => {
@@ -41,9 +42,9 @@ export function VipInviteCodesPage() {
     setBusy(true);
     try {
       await disableInviteCode(code.code);
-      setLastGenerated((prev) => prev.filter((item) => item !== code.code));
+      setLastGenerated((prev) => prev.filter((item) => item !== code.registration_url));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to disable invite code");
+      setError(err instanceof Error ? err.message : "Failed to disable invite link");
     } finally {
       setBusy(false);
     }
@@ -51,7 +52,7 @@ export function VipInviteCodesPage() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <PageHeader title="VIP invite codes" count={inviteCodes.length}>
+      <PageHeader title="VIP invite links" count={inviteCodes.length}>
         <Button size="sm" variant="outline" onClick={() => refetchInviteCodes().catch((e) => setError((e as Error).message))}>
           <RefreshCw className="size-4" />
           Refresh
@@ -61,7 +62,7 @@ export function VipInviteCodesPage() {
       <div className="grid gap-4 border-b border-border p-6">
         <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
           <div className="grid max-w-sm gap-2">
-            <Label htmlFor="invite-code-count">Codes to generate</Label>
+            <Label htmlFor="invite-code-count">Links to generate</Label>
             <Input
               id="invite-code-count"
               type="number"
@@ -73,12 +74,13 @@ export function VipInviteCodesPage() {
           </div>
           <Button onClick={generate} disabled={busy}>
             <Plus className="size-4" />
-            {busy ? "Generating..." : "Generate codes"}
+            {busy ? "Generating..." : "Generate links"}
           </Button>
         </div>
 
         <div className="flex flex-wrap gap-2 text-sm">
           <span className="rounded-md border border-border px-3 py-1.5 text-muted-foreground">Available <strong className="tabular text-foreground">{summary.available}</strong></span>
+          <span className="rounded-md border border-border px-3 py-1.5 text-muted-foreground">Expired <strong className="tabular text-foreground">{summary.expired}</strong></span>
           <span className="rounded-md border border-border px-3 py-1.5 text-muted-foreground">Used <strong className="tabular text-foreground">{summary.used}</strong></span>
           <span className="rounded-md border border-border px-3 py-1.5 text-muted-foreground">Disabled <strong className="tabular text-foreground">{summary.disabled}</strong></span>
         </div>
@@ -95,15 +97,15 @@ export function VipInviteCodesPage() {
                 Copy all
               </Button>
             </div>
-            <div className="flex flex-wrap gap-2">
-              {lastGenerated.map((code) => (
+            <div className="grid gap-2">
+              {lastGenerated.map((link) => (
                 <button
-                  key={code}
-                  onClick={() => copy([code])}
-                  className="rounded border border-border bg-background px-3 py-1.5 font-mono text-sm font-semibold hover:border-[var(--ring)]"
-                  title="Copy code"
+                  key={link}
+                  onClick={() => copy([link])}
+                  className="min-w-0 truncate rounded border border-border bg-background px-3 py-1.5 text-left font-mono text-sm font-semibold hover:border-[var(--ring)]"
+                  title="Copy registration link"
                 >
-                  {code}
+                  {link}
                 </button>
               ))}
             </div>
@@ -112,15 +114,16 @@ export function VipInviteCodesPage() {
       </div>
 
       {inviteCodes.length === 0 ? (
-        <EmptyState title="No VIP invite codes yet. Generate a code before inviting a registrant." />
+        <EmptyState title="No VIP invite links yet. Generate a link before inviting a registrant." />
       ) : (
         <div className="min-h-0 flex-1 overflow-auto">
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Code</TableHead>
+                <TableHead>Registration link</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Registrant</TableHead>
+                <TableHead>Expires</TableHead>
                 <TableHead>Created</TableHead>
                 <TableHead>Used</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
@@ -129,7 +132,12 @@ export function VipInviteCodesPage() {
             <TableBody>
               {inviteCodes.map((code) => (
                 <TableRow key={code.code}>
-                  <TableCell><span className="font-mono text-sm font-semibold">{code.code}</span></TableCell>
+                  <TableCell>
+                    <span className="grid min-w-[18rem] max-w-[34rem] gap-1">
+                      <span className="truncate font-mono text-sm font-semibold">{code.registration_url}</span>
+                      <span className="font-mono text-xs text-muted-foreground">ID {code.code}</span>
+                    </span>
+                  </TableCell>
                   <TableCell><CategoryBadge value={code.status} /></TableCell>
                   <TableCell>
                     {code.contact_name || code.contact_email ? (
@@ -141,11 +149,12 @@ export function VipInviteCodesPage() {
                       <span className="text-muted-foreground">Not registered</span>
                     )}
                   </TableCell>
+                  <TableCell className="tabular text-muted-foreground">{formatDate(code.expires_at)}</TableCell>
                   <TableCell className="tabular text-muted-foreground">{formatDate(code.created_at)}</TableCell>
                   <TableCell className="tabular text-muted-foreground">{code.used_at ? formatDate(code.used_at) : "-"}</TableCell>
                   <TableCell>
                     <div className="flex justify-end gap-1">
-                      <Button size="icon" variant="ghost" className="size-8" onClick={() => copy([code.code])} aria-label={`Copy code ${code.code}`}>
+                      <Button size="icon" variant="ghost" className="size-8" onClick={() => copy([code.registration_url])} aria-label={`Copy registration link ${code.code}`}>
                         <Copy className="size-4" />
                       </Button>
                       <Button
@@ -154,7 +163,7 @@ export function VipInviteCodesPage() {
                         className="size-8 text-muted-foreground hover:text-destructive"
                         disabled={code.status !== "available" || busy}
                         onClick={() => disable(code)}
-                        aria-label={`Disable code ${code.code}`}
+                        aria-label={`Disable registration link ${code.code}`}
                       >
                         <Ban className="size-4" />
                       </Button>

@@ -63,7 +63,7 @@ export function ContactsPage({ navigate }: { navigate: (to: string) => void }) {
   const addButton = (
     <Button size="sm" onClick={showRegistrationCode ? () => navigate("/invite-codes") : openCreate}>
       <Plus className="size-4" />
-      {showRegistrationCode ? "Generate invite code" : "Add contact"}
+      {showRegistrationCode ? "Generate invite link" : "Add contact"}
     </Button>
   );
 
@@ -105,7 +105,7 @@ export function ContactsPage({ navigate }: { navigate: (to: string) => void }) {
       {contacts.length === 0 ? (
         <EmptyState
           title={showRegistrationCode
-            ? "No VIP registrants yet. Generate an invite code before sending someone to registration."
+            ? "No VIP registrants yet. Generate an invite link before sending someone to registration."
             : `No ${pipeline.contactLabel.toLowerCase()}s yet. Add your first, or import a CSV.`}
           action={
             <div className="flex flex-col items-center gap-2">

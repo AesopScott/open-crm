@@ -19,7 +19,7 @@ export interface CrmContextValue {
   deleteContact: (id: string) => Promise<void>;
   fetchContact: (id: string) => Promise<Contact | null>;
 
-  // VIP invite codes
+  // VIP invite links
   inviteCodes: VipInviteCode[];
   refetchInviteCodes: () => Promise<void>;
   generateInviteCodes: (count: number) => Promise<string[]>;

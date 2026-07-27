@@ -34,6 +34,7 @@ CREATE TABLE IF NOT EXISTS vip_invite_codes (
   status TEXT NOT NULL DEFAULT 'available',
   contact_id TEXT REFERENCES contacts(id) ON DELETE SET NULL,
   created_at TEXT DEFAULT (datetime('now')),
+  expires_at TEXT DEFAULT (datetime('now', '+48 hours')),
   used_at TEXT DEFAULT '',
   disabled_at TEXT DEFAULT ''
 );
