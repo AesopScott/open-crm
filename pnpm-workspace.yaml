@@ -4,6 +4,10 @@ allowBuilds:
   sharp: false
   vue-demi: false
   workerd: true
+overrides:
+  picomatch: ^4.0.4
+  postcss: ^8.5.18
+  yaml: ^2.8.3
 minimumReleaseAgeExclude:
   # First-party Clawnify package — exempt from the new-release age gate so app
   # builds pick up fresh versions promptly.

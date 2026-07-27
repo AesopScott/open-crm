@@ -185,6 +185,7 @@ const CompanySchema = z.object({
   created_at: z.string(),
   updated_at: z.string(),
 }).openapi("Company");
+type Company = z.infer<typeof CompanySchema>;
 
 const ContactSchema = z.object({
   id: z.string(),
@@ -200,6 +201,7 @@ const ContactSchema = z.object({
   created_at: z.string(),
   updated_at: z.string(),
 }).openapi("Contact");
+type Contact = z.infer<typeof ContactSchema>;
 
 const DealSchema = z.object({
   id: z.string(),
@@ -216,6 +218,7 @@ const DealSchema = z.object({
   created_at: z.string(),
   updated_at: z.string(),
 }).openapi("Deal");
+type Deal = z.infer<typeof DealSchema>;
 
 const IdParam = z.object({ id: z.string().openapi({ description: "Resource ID (integer)" }) });
 
@@ -367,7 +370,7 @@ app.openapi(listCompanies, async (c) => {
     );
     const total = countResult?.total || 0;
 
-    const rows = await query(
+    const rows = await query<Company>(
       `SELECT c.*, (SELECT COUNT(*) FROM contacts WHERE company_id = c.id) as contact_count
        FROM companies c${whereSQL} ORDER BY c.${qid(sortCol)} ${order}, c.id LIMIT ? OFFSET ?`,
       [...params, limit, offset],
@@ -425,7 +428,8 @@ app.openapi(createCompany, async (c) => {
 
     await applyCustomValues("company", "companies", id, customValues);
 
-    const inserted = await get("SELECT * FROM companies WHERE id = ?", [id]);
+    const inserted = await get<Company>("SELECT * FROM companies WHERE id = ?", [id]);
+    if (!inserted) return c.json({ error: "Company was not created" }, 500);
     return c.json({ company: inserted }, 201);
   } catch (err: unknown) {
     return c.json({ error: (err as Error).message }, 500);
@@ -495,7 +499,8 @@ app.openapi(updateCompany, async (c) => {
     }
     await applyCustomValues("company", "companies", id, customValues);
 
-    const updated = await get("SELECT * FROM companies WHERE id = ?", [id]);
+    const updated = await get<Company>("SELECT * FROM companies WHERE id = ?", [id]);
+    if (!updated) return c.json({ error: "Company was not found after update" }, 500);
     return c.json({ company: updated }, 200);
   } catch (err: unknown) {
     return c.json({ error: (err as Error).message }, 500);
@@ -601,7 +606,7 @@ app.openapi(listContacts, async (c) => {
     );
     const total = countResult?.total || 0;
 
-    const rows = await query(
+    const rows = await query<Contact>(
       `SELECT ct.*, co.name as company_name, co.domain as company_domain
        FROM contacts ct
        LEFT JOIN companies co ON ct.company_id = co.id
@@ -673,12 +678,13 @@ app.openapi(createContact, async (c) => {
 
     await applyCustomValues("contact", "contacts", id, customValues);
 
-    const inserted = await get(
+    const inserted = await get<Contact>(
       `SELECT ct.*, co.name as company_name, co.domain as company_domain
        FROM contacts ct LEFT JOIN companies co ON ct.company_id = co.id
        WHERE ct.id = ?`,
       [id],
     );
+    if (!inserted) return c.json({ error: "Contact was not created" }, 500);
     return c.json({ contact: inserted }, 201);
   } catch (err: unknown) {
     return c.json({ error: (err as Error).message }, 500);
@@ -753,12 +759,13 @@ app.openapi(updateContact, async (c) => {
     }
     await applyCustomValues("contact", "contacts", id, customValues);
 
-    const updated = await get(
+    const updated = await get<Contact>(
       `SELECT ct.*, co.name as company_name, co.domain as company_domain
        FROM contacts ct LEFT JOIN companies co ON ct.company_id = co.id
        WHERE ct.id = ?`,
       [id],
     );
+    if (!updated) return c.json({ error: "Contact was not found after update" }, 500);
     return c.json({ contact: updated }, 200);
   } catch (err: unknown) {
     return c.json({ error: (err as Error).message }, 500);
@@ -1058,7 +1065,7 @@ const getDealsBoard = createRoute({
 
 app.openapi(getDealsBoard, async (c) => {
   try {
-    const rows = await query(
+    const rows = await query<Deal>(
       `SELECT d.*,
               ct.first_name as contact_first_name, ct.last_name as contact_last_name,
               co.name as company_name, co.domain as company_domain
@@ -1143,7 +1150,7 @@ app.openapi(listDeals, async (c) => {
       [...params],
     );
 
-    const rows = await query(
+    const rows = await query<Deal>(
       `SELECT d.*,
               ct.first_name as contact_first_name, ct.last_name as contact_last_name,
               co.name as company_name, co.domain as company_domain
@@ -1221,7 +1228,7 @@ app.openapi(createDeal, async (c) => {
 
     await applyCustomValues("deal", "deals", id, customValues);
 
-    const inserted = await get(
+    const inserted = await get<Deal>(
       `SELECT d.*, ct.first_name as contact_first_name, ct.last_name as contact_last_name,
               co.name as company_name, co.domain as company_domain
        FROM deals d
@@ -1230,6 +1237,7 @@ app.openapi(createDeal, async (c) => {
        WHERE d.id = ?`,
       [id],
     );
+    if (!inserted) return c.json({ error: "Deal was not created" }, 500);
     return c.json({ deal: inserted }, 201);
   } catch (err: unknown) {
     return c.json({ error: (err as Error).message }, 500);
@@ -1312,7 +1320,7 @@ app.openapi(updateDeal, async (c) => {
     }
     await applyCustomValues("deal", "deals", id, customValues);
 
-    const updated = await get<Record<string, unknown>>(
+    const updated = await get<Deal>(
       `SELECT d.*, ct.first_name as contact_first_name, ct.last_name as contact_last_name,
               co.name as company_name, co.domain as company_domain
        FROM deals d
@@ -1321,6 +1329,7 @@ app.openapi(updateDeal, async (c) => {
        WHERE d.id = ?`,
       [id],
     );
+    if (!updated) return c.json({ error: "Deal was not found after update" }, 500);
 
     // Deal just marked won → log it and notify Slack (best-effort, never blocks
     // the update). Fires only when this request set stage='won'.
@@ -1628,7 +1637,7 @@ app.post("/api/contacts/import", async (c) => {
         if (!existing.phone) existing.phone = r.company_phone;
       }
     }
-    const companyIds = new Map<string, number>(); // lowercased name → id
+    const companyIds = new Map<string, string>(); // lowercased name → id
 
     const loadIds = async (names: string[]) => {
       for (const group of chunk(names, LOOKUP_CHUNK)) {

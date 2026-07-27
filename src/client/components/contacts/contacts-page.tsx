@@ -98,7 +98,7 @@ export function ContactsPage({ navigate }: { navigate: (to: string) => void }) {
 
       {contacts.length === 0 ? (
         <EmptyState
-          title="No contacts yet. Add your first, or import a CSV/XLSX."
+          title="No contacts yet. Add your first, or import a CSV."
           action={
             <div className="flex flex-col items-center gap-2">
               {addButton}

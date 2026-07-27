@@ -37,6 +37,48 @@ const CUSTOM_PREFIX = "custom:";
 
 const norm = (h: string) => h.toLowerCase().replace(/[^a-z0-9]/g, "");
 
+function parseCsv(text: string): string[][] {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let cell = "";
+  let quoted = false;
+
+  for (let i = 0; i < text.length; i += 1) {
+    const char = text[i];
+    const next = text[i + 1];
+
+    if (quoted) {
+      if (char === '"' && next === '"') {
+        cell += '"';
+        i += 1;
+      } else if (char === '"') {
+        quoted = false;
+      } else {
+        cell += char;
+      }
+      continue;
+    }
+
+    if (char === '"') {
+      quoted = true;
+    } else if (char === ",") {
+      row.push(cell);
+      cell = "";
+    } else if (char === "\n") {
+      row.push(cell);
+      rows.push(row);
+      row = [];
+      cell = "";
+    } else if (char !== "\r") {
+      cell += char;
+    }
+  }
+
+  row.push(cell);
+  rows.push(row);
+  return rows;
+}
+
 function autoMap(
   headers: string[],
   config: EntityImportConfig,
@@ -126,11 +168,10 @@ export function ImportDialog({
     setFileName(file.name);
     setBusy(true);
     try {
-      const XLSX = await import("xlsx");
-      const buf = await file.arrayBuffer();
-      const wb = XLSX.read(buf, { type: "array" });
-      const sheet = wb.Sheets[wb.SheetNames[0]];
-      const grid = XLSX.utils.sheet_to_json<string[]>(sheet, { header: 1, raw: false, defval: "" });
+      if (!/\.csv$/i.test(file.name) && file.type !== "text/csv") {
+        throw new Error("Import currently supports CSV files only. Export XLSX files to CSV first.");
+      }
+      const grid = parseCsv(await file.text());
       const nonEmpty = grid.filter((r) => r.some((cell) => String(cell).trim() !== ""));
       if (nonEmpty.length < 2) throw new Error("File needs a header row and at least one data row");
       const headers = nonEmpty[0].map((h) => String(h).trim());
@@ -211,7 +252,7 @@ export function ImportDialog({
           <label className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-input p-10 text-center transition-colors hover:border-primary hover:bg-secondary">
             <input
               type="file"
-              accept=".csv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+              accept=".csv,text/csv"
               className="sr-only"
               onChange={onFile}
               disabled={busy}
@@ -221,9 +262,9 @@ export function ImportDialog({
               <span className="text-sm text-muted-foreground">Reading {fileName}…</span>
             ) : (
               <>
-                <span className="text-sm font-medium">Choose a CSV or Excel file</span>
+                <span className="text-sm font-medium">Choose a CSV file</span>
                 <span className="text-xs text-muted-foreground">
-                  .csv, .xlsx, or .xls — first row must be column headers
+                  First row must be column headers
                 </span>
               </>
             )}
