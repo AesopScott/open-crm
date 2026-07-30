@@ -6,14 +6,23 @@ import { PageHeader, CategoryBadge, EmptyState } from "@/components/shared";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from "@/components/ui/table";
 import type { VipInviteCode } from "@/types";
+import { MOJO_EVENTS } from "../../shared/mojo-events";
 
 export function VipInviteCodesPage() {
   const { inviteCodes, generateInviteCodes, deleteInviteCode, refetchInviteCodes, setError } = useCrm();
   const [count, setCount] = useState(1);
+  const [selectedEventSlug, setSelectedEventSlug] = useState(MOJO_EVENTS[0]?.slug || "");
   const [busy, setBusy] = useState(false);
   const [lastGenerated, setLastGenerated] = useState<string[]>([]);
+  const [lastGeneratedEvent, setLastGeneratedEvent] = useState<{ title: string; dateLabel: string } | null>(null);
+
+  const selectedEvent = useMemo(
+    () => MOJO_EVENTS.find((event) => event.slug === selectedEventSlug),
+    [selectedEventSlug],
+  );
 
   const summary = useMemo(() => ({
     available: inviteCodes.filter((code) => code.status === "available").length,
@@ -23,10 +32,15 @@ export function VipInviteCodesPage() {
   }), [inviteCodes]);
 
   const generate = async () => {
+    if (!selectedEvent) {
+      setError("Select an event before generating invite links.");
+      return;
+    }
     setBusy(true);
     try {
-      const links = await generateInviteCodes(count);
+      const links = await generateInviteCodes(count, selectedEvent.slug);
       setLastGenerated(links);
+      setLastGeneratedEvent({ title: selectedEvent.title, dateLabel: selectedEvent.dateLabel });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to generate invite links");
     } finally {
@@ -61,7 +75,22 @@ export function VipInviteCodesPage() {
       </PageHeader>
 
       <div className="grid gap-4 border-b border-border p-6">
-        <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
+        <div className="grid gap-3 md:grid-cols-[minmax(16rem,1fr)_10rem_auto] md:items-end">
+          <div className="grid gap-2">
+            <Label htmlFor="invite-event">Event</Label>
+            <Select value={selectedEventSlug} onValueChange={setSelectedEventSlug}>
+              <SelectTrigger id="invite-event">
+                <SelectValue placeholder="Select event" />
+              </SelectTrigger>
+              <SelectContent>
+                {MOJO_EVENTS.map((event) => (
+                  <SelectItem key={event.slug} value={event.slug}>
+                    {event.title} - {event.dateLabel}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
           <div className="grid max-w-sm gap-2">
             <Label htmlFor="invite-code-count">Links to generate</Label>
             <Input
@@ -73,7 +102,7 @@ export function VipInviteCodesPage() {
               onChange={(event) => setCount(Math.min(100, Math.max(1, Number(event.target.value) || 1)))}
             />
           </div>
-          <Button onClick={generate} disabled={busy}>
+          <Button onClick={generate} disabled={busy || !selectedEvent}>
             <Plus className="size-4" />
             {busy ? "Generating..." : "Generate links"}
           </Button>
@@ -91,7 +120,12 @@ export function VipInviteCodesPage() {
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex items-center gap-2 text-sm font-semibold">
                 <KeyRound className="size-4 text-[var(--ring)]" />
-                Newly generated
+                <span className="grid gap-0.5">
+                  <span>Newly generated</span>
+                  {lastGeneratedEvent && (
+                    <span className="text-xs font-normal text-muted-foreground">{lastGeneratedEvent.title} - {lastGeneratedEvent.dateLabel}</span>
+                  )}
+                </span>
               </div>
               <Button size="sm" variant="outline" onClick={() => copy(lastGenerated)}>
                 <Copy className="size-4" />
@@ -131,6 +165,7 @@ export function VipInviteCodesPage() {
             <TableHeader>
               <TableRow>
                 <TableHead>Registration link</TableHead>
+                <TableHead>Event</TableHead>
                 <TableHead>QR code</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Registrant</TableHead>
@@ -148,6 +183,16 @@ export function VipInviteCodesPage() {
                       <span className="truncate font-mono text-sm font-semibold">{code.registration_url}</span>
                       <span className="font-mono text-xs text-muted-foreground">ID {code.code}</span>
                     </span>
+                  </TableCell>
+                  <TableCell>
+                    {code.event_name ? (
+                      <span className="grid min-w-[14rem] gap-0.5">
+                        <span className="truncate font-medium text-foreground">{code.event_name}</span>
+                        <span className="text-xs text-muted-foreground">{code.event_date || "Date pending"}</span>
+                      </span>
+                    ) : (
+                      <span className="text-muted-foreground">Unassigned</span>
+                    )}
                   </TableCell>
                   <TableCell>
                     <InviteQrCode value={code.registration_url} label={`guest-invite-${code.code}`} compact />

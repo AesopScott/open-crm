@@ -1,6 +1,7 @@
 import { createApp, createRoute, z } from "@clawnify/app";
 import freemailDomains from "free-email-domains";
 import { query, get, run } from "./db.js";
+import { mojoEventBySlug } from "../shared/mojo-events.js";
 import type { CredentialBinding } from "@clawnify/connections";
 import { sendEmail, createMeeting, notifySlack, connectionStatus } from "./integrations.js";
 import {
@@ -222,13 +223,16 @@ function vipRegistrationUrl(code: string, requestUrl: string): string {
   return url.toString();
 }
 
-async function vipInviteCode(code: string): Promise<{ code: string; status: string; contact_id: string | null; expires_at: string } | null> {
-  return (await get<{ code: string; status: string; contact_id: string | null; expires_at: string }>(
+async function vipInviteCode(code: string): Promise<{ code: string; status: string; contact_id: string | null; expires_at: string; event_slug: string; event_name: string; event_date: string } | null> {
+  return (await get<{ code: string; status: string; contact_id: string | null; expires_at: string; event_slug: string; event_name: string; event_date: string }>(
     `SELECT
        code,
        CASE WHEN status = 'available' AND expires_at <= datetime('now') THEN 'expired' ELSE status END as status,
        contact_id,
-       expires_at
+       expires_at,
+       event_slug,
+       event_name,
+       event_date
      FROM vip_invite_codes
      WHERE code = ?`,
     [code],
@@ -289,6 +293,9 @@ const ContactSchema = z.object({
   title: z.string(),
   status: z.string(),
   registration_code: z.string().optional(),
+  event_slug: z.string().optional(),
+  event_name: z.string().optional(),
+  event_date: z.string().optional(),
   company_name: z.string().nullable().optional(),
   company_domain: z.string().nullable().optional(),
   created_at: z.string(),
@@ -380,13 +387,22 @@ async function ensurePipelineSchema(): Promise<void> {
       created_at TEXT DEFAULT (datetime('now')),
       expires_at TEXT DEFAULT (datetime('now', '+48 hours')),
       used_at TEXT DEFAULT '',
-      disabled_at TEXT DEFAULT ''
+      disabled_at TEXT DEFAULT '',
+      event_slug TEXT DEFAULT '',
+      event_name TEXT DEFAULT '',
+      event_date TEXT DEFAULT ''
     )`,
   );
   await ensureColumn("companies", "pipeline", "TEXT NOT NULL DEFAULT 'vendor_sponsors'");
   await ensureColumn("contacts", "pipeline", "TEXT NOT NULL DEFAULT 'vip_registrants'");
   await ensureColumn("contacts", "registration_code", "TEXT DEFAULT ''");
+  await ensureColumn("contacts", "event_slug", "TEXT DEFAULT ''");
+  await ensureColumn("contacts", "event_name", "TEXT DEFAULT ''");
+  await ensureColumn("contacts", "event_date", "TEXT DEFAULT ''");
   await ensureColumn("vip_invite_codes", "expires_at", "TEXT DEFAULT ''");
+  await ensureColumn("vip_invite_codes", "event_slug", "TEXT DEFAULT ''");
+  await ensureColumn("vip_invite_codes", "event_name", "TEXT DEFAULT ''");
+  await ensureColumn("vip_invite_codes", "event_date", "TEXT DEFAULT ''");
   await run(`UPDATE vip_invite_codes SET expires_at = datetime(created_at, '+${VIP_INVITE_EXPIRES_HOURS} hours') WHERE expires_at IS NULL OR expires_at = ''`);
   await ensureColumn("deals", "pipeline", "TEXT NOT NULL DEFAULT 'vendor_sponsors'");
   await ensureColumn("stages", "pipeline", "TEXT NOT NULL DEFAULT 'vendor_sponsors'");
@@ -702,6 +718,9 @@ app.get("/api/vip-invite-codes", async (c) => {
       expires_at: string;
       used_at: string;
       disabled_at: string;
+      event_slug: string;
+      event_name: string;
+      event_date: string;
       contact_name: string | null;
       contact_email: string | null;
     }>(
@@ -713,6 +732,9 @@ app.get("/api/vip-invite-codes", async (c) => {
          v.expires_at,
          v.used_at,
          v.disabled_at,
+         v.event_slug,
+         v.event_name,
+         v.event_date,
          TRIM(COALESCE(ct.first_name, '') || ' ' || COALESCE(ct.last_name, '')) as contact_name,
          ct.email as contact_email
        FROM vip_invite_codes v
@@ -741,14 +763,17 @@ app.get("/api/vip-invite-codes", async (c) => {
 
 app.post("/api/vip-invite-codes", async (c) => {
   try {
-    const body = await c.req.json<{ count?: number }>().catch((): { count?: number } => ({}));
+    const body = await c.req.json<{ count?: number; eventSlug?: string }>().catch((): { count?: number; eventSlug?: string } => ({}));
     const count = Math.min(100, Math.max(1, Math.floor(Number(body.count || 1))));
+    const eventSlug = cleanString(body.eventSlug, 120);
+    const event = mojoEventBySlug(eventSlug);
+    if (!event) return c.json({ error: "Select an event before generating invite links." }, 400);
     const links: string[] = [];
     for (let i = 0; i < count; i += 1) {
       const code = await generateVipInviteCode();
       await run(
-        `INSERT INTO vip_invite_codes (code, expires_at) VALUES (?, datetime('now', '+${VIP_INVITE_EXPIRES_HOURS} hours'))`,
-        [code],
+        `INSERT INTO vip_invite_codes (code, expires_at, event_slug, event_name, event_date) VALUES (?, datetime('now', '+${VIP_INVITE_EXPIRES_HOURS} hours'), ?, ?, ?)`,
+        [code, event.slug, event.title, event.dateLabel],
       );
       links.push(vipRegistrationUrl(code, c.req.url));
     }
@@ -783,7 +808,7 @@ app.get("/api/public/vip-invite-codes/:code", async (c) => {
         : "That invite link is invalid or has already been used.";
       return c.json({ ok: false, error: reason }, 404);
     }
-    return c.json({ ok: true, expires_at: row.expires_at }, 200);
+    return c.json({ ok: true, expires_at: row.expires_at, event_slug: row.event_slug, event_name: row.event_name, event_date: row.event_date }, 200);
   } catch (err: unknown) {
     return c.json({ ok: false, error: (err as Error).message }, 500);
   }
@@ -830,8 +855,8 @@ app.post("/api/public/vip-registration", async (c) => {
 
     const id = crypto.randomUUID();
     await run(
-      "INSERT INTO contacts (id, first_name, pipeline, last_name, email, phone, company_id, title, status, registration_code) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-      [id, firstName, "vip_registrants", lastName, email, phone, companyId, "", "active", inviteCode],
+      "INSERT INTO contacts (id, first_name, pipeline, last_name, email, phone, company_id, title, status, registration_code, event_slug, event_name, event_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      [id, firstName, "vip_registrants", lastName, email, phone, companyId, "", "active", inviteCode, invite.event_slug, invite.event_name, invite.event_date],
     );
 
     const update = await run(
@@ -849,13 +874,14 @@ app.post("/api/public/vip-registration", async (c) => {
       "note",
       [
         `Guest registration submitted with invite link ID ${inviteCode}.`,
+        invite.event_name ? `Event: ${invite.event_name}${invite.event_date ? ` (${invite.event_date})` : ""}.` : "",
         `Phone verification: ${phoneVerificationStatus}.`,
         isPresenter ? "Role: Presenter." : "",
         isRoundtableLeader ? "Role: Round table leader." : "",
         foodPreferences.length ? `Food preferences: ${foodPreferences.join(", ")}.` : "",
         foodNotes ? `Food notes: ${foodNotes}.` : "",
       ].filter(Boolean).join("\n"),
-      { source: "mojoaisummits.com/vip-registration", inviteCode },
+      { source: "mojoaisummits.com/vip-registration", inviteCode, eventSlug: invite.event_slug, eventName: invite.event_name, eventDate: invite.event_date },
     );
 
     return c.json({ ok: true, id }, 201);

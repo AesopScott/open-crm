@@ -54,6 +54,9 @@ export interface Contact {
   title: string;
   status: string;
   registration_code?: string;
+  event_slug?: string;
+  event_name?: string;
+  event_date?: string;
   company_name?: string | null;
   company_domain?: string | null;
   custom?: Record<string, unknown>; // write payload; on reads, values are flat columns
@@ -72,6 +75,9 @@ export interface VipInviteCode {
   expires_at: string;
   used_at: string;
   disabled_at: string;
+  event_slug: string;
+  event_name: string;
+  event_date: string;
 }
 
 export interface Deal {

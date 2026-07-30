@@ -25,6 +25,9 @@ CREATE TABLE IF NOT EXISTS contacts (
   title TEXT DEFAULT '',
   status TEXT NOT NULL DEFAULT 'lead',
   registration_code TEXT DEFAULT '',
+  event_slug TEXT DEFAULT '',
+  event_name TEXT DEFAULT '',
+  event_date TEXT DEFAULT '',
   created_at TEXT DEFAULT (datetime('now')),
   updated_at TEXT DEFAULT (datetime('now'))
 );
@@ -36,7 +39,10 @@ CREATE TABLE IF NOT EXISTS vip_invite_codes (
   created_at TEXT DEFAULT (datetime('now')),
   expires_at TEXT DEFAULT (datetime('now', '+48 hours')),
   used_at TEXT DEFAULT '',
-  disabled_at TEXT DEFAULT ''
+  disabled_at TEXT DEFAULT '',
+  event_slug TEXT DEFAULT '',
+  event_name TEXT DEFAULT '',
+  event_date TEXT DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS deals (
