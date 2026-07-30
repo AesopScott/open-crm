@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Ban, Copy, Download, KeyRound, Plus, QrCode, RefreshCw } from "lucide-react";
+import { Copy, Download, KeyRound, Plus, QrCode, RefreshCw, Trash2 } from "lucide-react";
 import * as QRCode from "qrcode";
 import { useCrm } from "@/context";
 import { PageHeader, CategoryBadge, EmptyState } from "@/components/shared";
@@ -10,7 +10,7 @@ import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from "@
 import type { VipInviteCode } from "@/types";
 
 export function VipInviteCodesPage() {
-  const { inviteCodes, generateInviteCodes, disableInviteCode, refetchInviteCodes, setError } = useCrm();
+  const { inviteCodes, generateInviteCodes, deleteInviteCode, refetchInviteCodes, setError } = useCrm();
   const [count, setCount] = useState(1);
   const [busy, setBusy] = useState(false);
   const [lastGenerated, setLastGenerated] = useState<string[]>([]);
@@ -38,14 +38,14 @@ export function VipInviteCodesPage() {
     await navigator.clipboard.writeText(values.join("\n")).catch(() => undefined);
   };
 
-  const disable = async (code: VipInviteCode) => {
-    if (code.status !== "available") return;
+  const deleteLink = async (code: VipInviteCode) => {
+    if (code.status === "used") return;
     setBusy(true);
     try {
-      await disableInviteCode(code.code);
+      await deleteInviteCode(code.code);
       setLastGenerated((prev) => prev.filter((item) => item !== code.registration_url));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to disable invite link");
+      setError(err instanceof Error ? err.message : "Failed to delete invite link");
     } finally {
       setBusy(false);
     }
@@ -175,11 +175,11 @@ export function VipInviteCodesPage() {
                         size="icon"
                         variant="ghost"
                         className="size-8 text-muted-foreground hover:text-destructive"
-                        disabled={code.status !== "available" || busy}
-                        onClick={() => disable(code)}
-                        aria-label={`Disable registration link ${code.code}`}
+                        disabled={code.status === "used" || busy}
+                        onClick={() => deleteLink(code)}
+                        aria-label={`Delete registration link ${code.code}`}
                       >
-                        <Ban className="size-4" />
+                        <Trash2 className="size-4" />
                       </Button>
                     </div>
                   </TableCell>

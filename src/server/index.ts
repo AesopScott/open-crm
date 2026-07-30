@@ -764,8 +764,8 @@ app.delete("/api/vip-invite-codes/:code", async (c) => {
     if (code.length !== REGISTRATION_CODE_DIGITS) return c.json({ error: "Invalid code" }, 400);
     const row = await vipInviteCode(code);
     if (!row) return c.json({ error: "Invite link not found" }, 404);
-    if (row.status === "used") return c.json({ error: "Used invite links cannot be disabled" }, 409);
-    await run("UPDATE vip_invite_codes SET status = 'disabled', disabled_at = datetime('now') WHERE code = ?", [code]);
+    if (row.status === "used") return c.json({ error: "Used invite links cannot be deleted" }, 409);
+    await run("DELETE FROM vip_invite_codes WHERE code = ?", [code]);
     return c.json({ ok: true }, 200);
   } catch (err: unknown) {
     return c.json({ error: (err as Error).message }, 500);

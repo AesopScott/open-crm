@@ -176,7 +176,7 @@ export function useCrmState(isAgent: boolean): CrmContextValue {
     return data.links;
   }, [refetchInviteCodes]);
 
-  const disableInviteCode = useCallback(async (code: string) => {
+  const deleteInviteCode = useCallback(async (code: string) => {
     await api("DELETE", `/api/vip-invite-codes/${encodeURIComponent(code)}`);
     await refetchInviteCodes();
   }, [refetchInviteCodes]);
@@ -261,7 +261,7 @@ export function useCrmState(isAgent: boolean): CrmContextValue {
     isAgent, activePipeline, setActivePipeline, stats,
     contacts, contactsPag, setContactsPage: cSet.setPage, setContactsSort: cSet.setSort, setContactsSearch: cSet.setSearch, setContactsFilters: cSet.setFilters,
     addContact, updateContact, deleteContact, fetchContact,
-    inviteCodes, refetchInviteCodes, generateInviteCodes, disableInviteCode,
+    inviteCodes, refetchInviteCodes, generateInviteCodes, deleteInviteCode,
     companies, companiesPag, setCompaniesPage: coSet.setPage, setCompaniesSort: coSet.setSort, setCompaniesSearch: coSet.setSearch, setCompaniesFilters: coSet.setFilters,
     addCompany, updateCompany, deleteCompany,
     deals, dealsPag, dealsTotalValue, setDealsPage: dSet.setPage, setDealsSort: dSet.setSort, setDealsSearch: dSet.setSearch,

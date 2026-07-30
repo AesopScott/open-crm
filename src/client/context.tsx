@@ -23,7 +23,7 @@ export interface CrmContextValue {
   inviteCodes: VipInviteCode[];
   refetchInviteCodes: () => Promise<void>;
   generateInviteCodes: (count: number) => Promise<string[]>;
-  disableInviteCode: (code: string) => Promise<void>;
+  deleteInviteCode: (code: string) => Promise<void>;
 
   // Companies
   companies: Company[];
