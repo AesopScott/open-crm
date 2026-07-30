@@ -1,5 +1,6 @@
-import { useMemo, useState } from "react";
-import { Copy, KeyRound, Plus, RefreshCw, Ban } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Ban, Copy, Download, KeyRound, Plus, QrCode, RefreshCw } from "lucide-react";
+import * as QRCode from "qrcode";
 import { useCrm } from "@/context";
 import { PageHeader, CategoryBadge, EmptyState } from "@/components/shared";
 import { Button } from "@/components/ui/button";
@@ -99,14 +100,23 @@ export function VipInviteCodesPage() {
             </div>
             <div className="grid gap-2">
               {lastGenerated.map((link) => (
-                <button
+                <div
                   key={link}
-                  onClick={() => copy([link])}
-                  className="min-w-0 truncate rounded border border-border bg-background px-3 py-1.5 text-left font-mono text-sm font-semibold hover:border-[var(--ring)]"
-                  title="Copy registration link"
+                  className="grid gap-3 rounded border border-border bg-background p-3 md:grid-cols-[auto_minmax(0,1fr)_auto] md:items-center"
                 >
-                  {link}
-                </button>
+                  <InviteQrCode value={link} label={`guest-invite-${inviteCodeFromUrl(link) || "link"}`} />
+                  <button
+                    onClick={() => copy([link])}
+                    className="min-w-0 truncate rounded border border-border bg-secondary/40 px-3 py-1.5 text-left font-mono text-sm font-semibold hover:border-[var(--ring)]"
+                    title="Copy registration link"
+                  >
+                    {link}
+                  </button>
+                  <Button size="sm" variant="outline" onClick={() => copy([link])}>
+                    <Copy className="size-4" />
+                    Copy
+                  </Button>
+                </div>
               ))}
             </div>
           </div>
@@ -121,6 +131,7 @@ export function VipInviteCodesPage() {
             <TableHeader>
               <TableRow>
                 <TableHead>Registration link</TableHead>
+                <TableHead>QR code</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Registrant</TableHead>
                 <TableHead>Expires</TableHead>
@@ -137,6 +148,9 @@ export function VipInviteCodesPage() {
                       <span className="truncate font-mono text-sm font-semibold">{code.registration_url}</span>
                       <span className="font-mono text-xs text-muted-foreground">ID {code.code}</span>
                     </span>
+                  </TableCell>
+                  <TableCell>
+                    <InviteQrCode value={code.registration_url} label={`guest-invite-${code.code}`} compact />
                   </TableCell>
                   <TableCell><CategoryBadge value={code.status} /></TableCell>
                   <TableCell>
@@ -184,4 +198,74 @@ function formatDate(value: string): string {
   const date = new Date(value.endsWith("Z") ? value : `${value}Z`);
   if (Number.isNaN(date.getTime())) return value;
   return date.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+}
+
+function inviteCodeFromUrl(value: string): string {
+  try {
+    return new URL(value).searchParams.get("invite") || "";
+  } catch {
+    return "";
+  }
+}
+
+function safeFileName(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "") || "guest-invite";
+}
+
+function InviteQrCode({ value, label, compact = false }: { value: string; label: string; compact?: boolean }) {
+  const [dataUrl, setDataUrl] = useState("");
+
+  useEffect(() => {
+    let active = true;
+    QRCode.toDataURL(value, {
+      errorCorrectionLevel: "M",
+      margin: 2,
+      width: 320,
+      color: {
+        dark: "#0A0F1E",
+        light: "#FFFFFF",
+      },
+    })
+      .then((url) => {
+        if (active) setDataUrl(url);
+      })
+      .catch(() => {
+        if (active) setDataUrl("");
+      });
+    return () => {
+      active = false;
+    };
+  }, [value]);
+
+  const download = () => {
+    if (!dataUrl) return;
+    const anchor = document.createElement("a");
+    anchor.href = dataUrl;
+    anchor.download = `${safeFileName(label)}-qr.png`;
+    anchor.click();
+  };
+
+  return (
+    <div className={compact ? "flex items-center gap-2" : "flex items-center gap-3"}>
+      <div className={compact ? "flex size-14 items-center justify-center rounded border border-border bg-white p-1" : "flex size-20 items-center justify-center rounded border border-border bg-white p-1.5"}>
+        {dataUrl ? (
+          <img src={dataUrl} alt="" className="size-full" />
+        ) : (
+          <QrCode className="size-5 text-[#0A0F1E]" />
+        )}
+      </div>
+      <Button
+        size={compact ? "icon" : "sm"}
+        variant="outline"
+        className={compact ? "size-8" : undefined}
+        onClick={download}
+        disabled={!dataUrl}
+        aria-label={`Download QR code for ${label}`}
+        title="Download QR code"
+      >
+        <Download className="size-4" />
+        {!compact && "Download QR"}
+      </Button>
+    </div>
+  );
 }
