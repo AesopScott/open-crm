@@ -10,11 +10,11 @@ export const PIPELINES: Array<{
 }> = [
   {
     key: "vip_registrants",
-    label: "Guest registrants",
+    label: "Guests",
     shortLabel: "Guests",
-    contactLabel: "Guest registrant",
+    contactLabel: "Guest",
     companyLabel: "Guest organizations",
-    dealLabel: "Guest pipeline",
+    dealLabel: "Guests",
   },
   {
     key: "vendor_sponsors",

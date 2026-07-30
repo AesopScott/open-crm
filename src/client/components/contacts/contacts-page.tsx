@@ -105,7 +105,7 @@ export function ContactsPage({ navigate }: { navigate: (to: string) => void }) {
       {contacts.length === 0 ? (
         <EmptyState
           title={showRegistrationCode
-            ? "No guest registrants yet. Generate an invite link before sending someone to registration."
+            ? "No guests yet. Generate an invite link before sending someone to registration."
             : `No ${pipeline.contactLabel.toLowerCase()}s yet. Add your first, or import a CSV.`}
           action={
             <div className="flex flex-col items-center gap-2">
