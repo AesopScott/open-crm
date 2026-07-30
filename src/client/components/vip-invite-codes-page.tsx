@@ -52,7 +52,7 @@ export function VipInviteCodesPage() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <PageHeader title="VIP invite links" count={inviteCodes.length}>
+      <PageHeader title="Guest invite links" count={inviteCodes.length}>
         <Button size="sm" variant="outline" onClick={() => refetchInviteCodes().catch((e) => setError((e as Error).message))}>
           <RefreshCw className="size-4" />
           Refresh
@@ -114,7 +114,7 @@ export function VipInviteCodesPage() {
       </div>
 
       {inviteCodes.length === 0 ? (
-        <EmptyState title="No VIP invite links yet. Generate a link before inviting a registrant." />
+        <EmptyState title="No guest invite links yet. Generate a link before inviting a registrant." />
       ) : (
         <div className="min-h-0 flex-1 overflow-auto">
           <Table>

@@ -775,7 +775,7 @@ app.delete("/api/vip-invite-codes/:code", async (c) => {
 app.get("/api/public/vip-invite-codes/:code", async (c) => {
   try {
     const code = normalizeRegistrationCode(c.req.param("code"));
-    if (code.length !== REGISTRATION_CODE_DIGITS) return c.json({ ok: false, error: "Open a valid VIP registration link." }, 400);
+    if (code.length !== REGISTRATION_CODE_DIGITS) return c.json({ ok: false, error: "Open a valid guest registration link." }, 400);
     const row = await vipInviteCode(code);
     if (!row || row.status !== "available") {
       const reason = row?.status === "expired"
@@ -804,7 +804,7 @@ app.post("/api/public/vip-registration", async (c) => {
     const isPresenter = body.isPresenter === true || body.isPresenter === "true";
     const isRoundtableLeader = body.isRoundtableLeader === true || body.isRoundtableLeader === "true";
 
-    if (inviteCode.length !== REGISTRATION_CODE_DIGITS) return c.json({ error: "Open a valid VIP registration link." }, 400);
+    if (inviteCode.length !== REGISTRATION_CODE_DIGITS) return c.json({ error: "Open a valid guest registration link." }, 400);
     const invite = await vipInviteCode(inviteCode);
     if (!invite || invite.status !== "available") {
       const reason = invite?.status === "expired"
@@ -821,7 +821,7 @@ app.post("/api/public/vip-registration", async (c) => {
       return c.json({ error: "Phone verification status is required." }, 400);
     }
     const existing = await get<{ id: string }>("SELECT id FROM contacts WHERE email = ? AND pipeline = 'vip_registrants'", [email]);
-    if (existing) return c.json({ error: "A VIP registration already exists for that email address." }, 409);
+    if (existing) return c.json({ error: "A guest registration already exists for that email address." }, 409);
 
     const { firstName, lastName } = splitName(name);
     let companyId: string | null = null;
@@ -848,7 +848,7 @@ app.post("/api/public/vip-registration", async (c) => {
       id,
       "note",
       [
-        `VIP registration submitted with invite link ID ${inviteCode}.`,
+        `Guest registration submitted with invite link ID ${inviteCode}.`,
         `Phone verification: ${phoneVerificationStatus}.`,
         isPresenter ? "Role: Presenter." : "",
         isRoundtableLeader ? "Role: Round table leader." : "",

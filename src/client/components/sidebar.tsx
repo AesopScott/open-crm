@@ -6,7 +6,7 @@ import type { Route } from "../hooks/use-router";
 
 const NAV = [
   { key: "contacts", path: "/contacts", label: "Contacts", icon: Users },
-  { key: "invite-codes", path: "/invite-codes", label: "Invite links", icon: KeyRound },
+  { key: "invite-codes", path: "/invite-codes", label: "Guest invite links", icon: KeyRound },
   { key: "companies", path: "/companies", label: "Companies", icon: Building2 },
   { key: "deals", path: "/deals", label: "Deals", icon: CircleDollarSign },
 ] as const;
