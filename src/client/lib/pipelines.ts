@@ -18,11 +18,11 @@ export const PIPELINES: Array<{
   },
   {
     key: "vendor_sponsors",
-    label: "Vendor sponsors",
-    shortLabel: "Sponsors",
-    contactLabel: "Sponsor contact",
-    companyLabel: "Vendor sponsors",
-    dealLabel: "Sponsor pipeline",
+    label: "Partners",
+    shortLabel: "Partners",
+    contactLabel: "Partner contact",
+    companyLabel: "Partners",
+    dealLabel: "Partner pipeline",
   },
 ];
 
