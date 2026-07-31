@@ -1,11 +1,12 @@
-import { useState } from "react";
-import { Plus, Pencil, Trash2, MoreHorizontal, ArrowRightLeft } from "lucide-react";
+import { useMemo, useState } from "react";
+import { Search, Plus, Pencil, Trash2, MoreHorizontal, ArrowRightLeft } from "lucide-react";
 import { useCrm } from "@/context";
 import { PageHeader, Avatar, EntityIcon, EmptyState } from "@/components/shared";
 import { DealDialog } from "@/components/deals/deal-dialog";
 import { StageDialog } from "@/components/deals/stage-dialog";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu";
@@ -27,6 +28,23 @@ export function DealsBoard() {
   const [stageDialogOpen, setStageDialogOpen] = useState(false);
   const [stageEditing, setStageEditing] = useState<StageDef | undefined>(undefined);
   const [stageDeleteTarget, setStageDeleteTarget] = useState<StageDef | null>(null);
+  const [search, setSearch] = useState("");
+
+  const visibleBoardDeals = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return boardDeals;
+
+    return boardDeals.filter((deal) => {
+      const contactName = `${deal.contact_first_name ?? ""} ${deal.contact_last_name ?? ""}`.trim();
+      return [
+        deal.name,
+        deal.company_name,
+        contactName,
+        deal.stage,
+        deal.value ? String(deal.value) : "",
+      ].some((value) => value?.toLowerCase().includes(q));
+    });
+  }, [boardDeals, search]);
 
   const openCreate = () => {
     setEditing(undefined);
@@ -57,7 +75,17 @@ export function DealsBoard() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <PageHeader title={pipeline.dealLabel} count={boardDeals.length}>
+      <PageHeader title={pipeline.dealLabel} count={visibleBoardDeals.length}>
+        <div className="relative">
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search deals..."
+            aria-label="Search deals"
+            className="h-9 w-56 pl-8"
+          />
+        </div>
         <div className="flex flex-col items-end">
           <div className="eyebrow">Pipeline value</div>
           <span className="tabular text-sm font-semibold">{formatMoney(dealsTotalValue)}</span>
@@ -71,7 +99,7 @@ export function DealsBoard() {
         <div className="min-h-0 flex-1 overflow-x-auto">
           <div className="flex h-full min-w-max gap-4 p-6">
             {stages.map((stage) => {
-              const columnDeals = boardDeals.filter((d) => d.stage === stage.key);
+              const columnDeals = visibleBoardDeals.filter((d) => d.stage === stage.key);
               const columnTotal = columnDeals.reduce((sum, d) => sum + (d.value || 0), 0);
               const c = colorClasses(stage.color);
               return (

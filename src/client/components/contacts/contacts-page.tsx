@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 import { Search, Upload, Plus, Pencil, Trash2, ChevronUp, ChevronDown } from "lucide-react";
 import { useCrm } from "@/context";
 import { PageHeader, Avatar, EntityIcon, CategoryBadge, EmptyState } from "@/components/shared";
-import { ConnectionsIndicator } from "@/components/connections-indicator";
 import { ContactDialog } from "@/components/contacts/contact-dialog";
 import { ContactPreview } from "@/components/contacts/contact-preview";
 import { TableFilter, fieldsFromDefs, type FilterField } from "@/components/table-filter";
@@ -81,7 +80,6 @@ export function ContactsPage({ navigate }: { navigate: (to: string) => void }) {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <PageHeader title={pipeline.label} count={contactsPag.total}>
-        <ConnectionsIndicator />
         <div className="relative">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
           <Input
