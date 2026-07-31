@@ -828,11 +828,14 @@ app.get("/api/public/vip-invite-codes/:code", async (c) => {
   }
 });
 
-app.post("/api/public/vip-registration", async (c) => {
+const publicGuestRegistrationHandler = async (c: any) => {
   try {
-    const body = await c.req.json<Record<string, unknown>>().catch((): Record<string, unknown> => ({}));
+    const body = await c.req.json().catch((): Record<string, unknown> => ({})) as Record<string, unknown>;
     const inviteCode = normalizeRegistrationCode(body.inviteCode);
     const name = cleanString(body.name, 200);
+    const companyName = cleanString(body.company, 200);
+    const title = cleanString(body.title, 200);
+    const industry = cleanString(body.industry, 200);
     const email = cleanString(body.email, 320).toLowerCase();
     const phone = cleanPhone(body.phone);
     const phoneVerificationStatus = cleanString(body.phoneVerificationStatus, 80);
@@ -863,14 +866,12 @@ app.post("/api/public/vip-registration", async (c) => {
     if (existing) return c.json({ error: "A guest registration already exists for that email address." }, 409);
 
     const { firstName, lastName } = splitName(name);
-    let companyId: string | null = null;
-    const dom = workEmailDomain(email);
-    if (dom) companyId = await findOrCreateCompanyByDomain(dom, "vip_registrants");
+    const companyId = await findOrCreateRegistrationCompany(companyName, industry, email);
 
     const id = crypto.randomUUID();
     await run(
       "INSERT INTO contacts (id, first_name, pipeline, last_name, email, phone, company_id, title, status, registration_code, event_slug, event_name, event_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-      [id, firstName, "vip_registrants", lastName, email, phone, companyId, "", "active", inviteCode, invite.event_slug, invite.event_name, invite.event_date],
+      [id, firstName, "vip_registrants", lastName, email, phone, companyId, title, "active", inviteCode, invite.event_slug, invite.event_name, invite.event_date],
     );
 
     const update = await run(
@@ -902,7 +903,10 @@ app.post("/api/public/vip-registration", async (c) => {
   } catch (err: unknown) {
     return c.json({ error: (err as Error).message }, 500);
   }
-});
+};
+
+app.post("/api/public/vip-registration", publicGuestRegistrationHandler);
+app.post("/api/public/guest-registration", publicGuestRegistrationHandler);
 
 // ── Contacts ───────────────────────────────────────────────────────
 
@@ -1974,6 +1978,40 @@ async function findOrCreateCompanyByDomain(domain: string, pipeline: PipelineKey
   const sld = domain.split(".")[0] || domain;
   const name = sld.charAt(0).toUpperCase() + sld.slice(1);
   await run("INSERT INTO companies (id, name, pipeline, domain) VALUES (?, ?, ?, ?)", [id, name, pipeline, domain]);
+  return id;
+}
+
+async function findOrCreateRegistrationCompany(name: string, industry: string, email: string): Promise<string | null> {
+  const domain = workEmailDomain(email);
+  if (!name) return domain ? findOrCreateCompanyByDomain(domain, "vip_registrants") : null;
+
+  const existing = await get<{ id: string; domain: string; industry: string }>(
+    "SELECT id, domain, industry FROM companies WHERE pipeline = ? AND name = ? COLLATE NOCASE LIMIT 1",
+    ["vip_registrants", name],
+  );
+  if (existing) {
+    const fields: string[] = [];
+    const params: unknown[] = [];
+    if (domain && !existing.domain) {
+      fields.push("domain = ?");
+      params.push(domain);
+    }
+    if (industry && !existing.industry) {
+      fields.push("industry = ?");
+      params.push(industry);
+    }
+    if (fields.length) {
+      params.push(existing.id);
+      await run(`UPDATE companies SET ${fields.join(", ")}, updated_at = datetime('now') WHERE id = ?`, params);
+    }
+    return existing.id;
+  }
+
+  const id = crypto.randomUUID();
+  await run(
+    "INSERT INTO companies (id, name, pipeline, domain, industry) VALUES (?, ?, ?, ?, ?)",
+    [id, name, "vip_registrants", domain, industry],
+  );
   return id;
 }
 
