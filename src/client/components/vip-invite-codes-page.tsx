@@ -13,6 +13,7 @@ import { MOJO_EVENTS } from "../../shared/mojo-events";
 export function VipInviteCodesPage() {
   const { inviteCodes, generateInviteCodes, deleteInviteCode, refetchInviteCodes, setError } = useCrm();
   const [count, setCount] = useState(1);
+  const [inviteeName, setInviteeName] = useState("");
   const [selectedEventSlug, setSelectedEventSlug] = useState(MOJO_EVENTS[0]?.slug || "");
   const [busy, setBusy] = useState(false);
   const [lastGenerated, setLastGenerated] = useState<string[]>([]);
@@ -35,9 +36,14 @@ export function VipInviteCodesPage() {
       setError("Select an event before generating invite links.");
       return;
     }
+    const trimmedInviteeName = inviteeName.trim();
+    if (!trimmedInviteeName) {
+      setError("Enter the registrant name before generating invite links.");
+      return;
+    }
     setBusy(true);
     try {
-      const links = await generateInviteCodes(count, selectedEvent.slug);
+      const links = await generateInviteCodes(count, selectedEvent.slug, trimmedInviteeName);
       setLastGenerated(links);
       setLastGeneratedEvent({ title: selectedEvent.title, dateLabel: selectedEvent.dateLabel });
     } catch (err) {
@@ -74,7 +80,7 @@ export function VipInviteCodesPage() {
       </PageHeader>
 
       <div className="grid gap-4 border-b border-border p-6">
-        <div className="grid gap-3 md:grid-cols-[10rem_minmax(18rem,1fr)_auto] md:items-end">
+        <div className="grid gap-3 md:grid-cols-[10rem_minmax(14rem,0.9fr)_minmax(18rem,1.2fr)_auto] md:items-end">
           <div className="grid max-w-sm gap-2">
             <Label htmlFor="invite-code-count">Links to generate</Label>
             <Input
@@ -84,6 +90,16 @@ export function VipInviteCodesPage() {
               max={100}
               value={count}
               onChange={(event) => setCount(Math.min(100, Math.max(1, Number(event.target.value) || 1)))}
+            />
+          </div>
+          <div className="grid gap-2">
+            <Label htmlFor="invitee-name">Registrant</Label>
+            <Input
+              id="invitee-name"
+              type="text"
+              value={inviteeName}
+              placeholder="Invitee name"
+              onChange={(event) => setInviteeName(event.target.value)}
             />
           </div>
           <div className="grid gap-2">
@@ -101,7 +117,7 @@ export function VipInviteCodesPage() {
               ))}
             </select>
           </div>
-          <Button onClick={generate} disabled={busy || !selectedEvent}>
+          <Button onClick={generate} disabled={busy || !selectedEvent || !inviteeName.trim()}>
             <Plus className="size-4" />
             {busy ? "Generating..." : "Generate Guest Link"}
           </Button>
@@ -198,10 +214,11 @@ export function VipInviteCodesPage() {
                   </TableCell>
                   <TableCell><CategoryBadge value={code.status} /></TableCell>
                   <TableCell>
-                    {code.contact_name || code.contact_email ? (
+                    {code.contact_name || code.contact_email || code.invitee_name ? (
                       <span className="grid gap-0.5">
-                        <span className="truncate font-medium text-foreground">{code.contact_name || code.contact_email}</span>
+                        <span className="truncate font-medium text-foreground">{code.contact_name || code.contact_email || code.invitee_name}</span>
                         {code.contact_email && <span className="truncate text-xs text-muted-foreground">{code.contact_email}</span>}
+                        {!code.contact_id && code.invitee_name && <span className="truncate text-xs text-muted-foreground">Invited registrant</span>}
                       </span>
                     ) : (
                       <span className="text-muted-foreground">Not registered</span>

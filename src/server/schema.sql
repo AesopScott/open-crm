@@ -42,7 +42,8 @@ CREATE TABLE IF NOT EXISTS vip_invite_codes (
   disabled_at TEXT DEFAULT '',
   event_slug TEXT DEFAULT '',
   event_name TEXT DEFAULT '',
-  event_date TEXT DEFAULT ''
+  event_date TEXT DEFAULT '',
+  invitee_name TEXT DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS deals (

@@ -78,6 +78,7 @@ export interface VipInviteCode {
   event_slug: string;
   event_name: string;
   event_date: string;
+  invitee_name: string;
 }
 
 export interface Deal {

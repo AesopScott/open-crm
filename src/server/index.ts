@@ -223,8 +223,8 @@ function vipRegistrationUrl(code: string, requestUrl: string): string {
   return url.toString();
 }
 
-async function vipInviteCode(code: string): Promise<{ code: string; status: string; contact_id: string | null; expires_at: string; event_slug: string; event_name: string; event_date: string } | null> {
-  return (await get<{ code: string; status: string; contact_id: string | null; expires_at: string; event_slug: string; event_name: string; event_date: string }>(
+async function vipInviteCode(code: string): Promise<{ code: string; status: string; contact_id: string | null; expires_at: string; event_slug: string; event_name: string; event_date: string; invitee_name: string } | null> {
+  return (await get<{ code: string; status: string; contact_id: string | null; expires_at: string; event_slug: string; event_name: string; event_date: string; invitee_name: string }>(
     `SELECT
        code,
        CASE WHEN status = 'available' AND expires_at <= datetime('now') THEN 'expired' ELSE status END as status,
@@ -232,7 +232,8 @@ async function vipInviteCode(code: string): Promise<{ code: string; status: stri
        expires_at,
        event_slug,
        event_name,
-       event_date
+       event_date,
+       invitee_name
      FROM vip_invite_codes
      WHERE code = ?`,
     [code],
@@ -390,7 +391,8 @@ async function ensurePipelineSchema(): Promise<void> {
       disabled_at TEXT DEFAULT '',
       event_slug TEXT DEFAULT '',
       event_name TEXT DEFAULT '',
-      event_date TEXT DEFAULT ''
+      event_date TEXT DEFAULT '',
+      invitee_name TEXT DEFAULT ''
     )`,
   );
   await ensureColumn("companies", "pipeline", "TEXT NOT NULL DEFAULT 'vendor_sponsors'");
@@ -403,6 +405,7 @@ async function ensurePipelineSchema(): Promise<void> {
   await ensureColumn("vip_invite_codes", "event_slug", "TEXT DEFAULT ''");
   await ensureColumn("vip_invite_codes", "event_name", "TEXT DEFAULT ''");
   await ensureColumn("vip_invite_codes", "event_date", "TEXT DEFAULT ''");
+  await ensureColumn("vip_invite_codes", "invitee_name", "TEXT DEFAULT ''");
   await run(`UPDATE vip_invite_codes SET expires_at = datetime(created_at, '+${VIP_INVITE_EXPIRES_HOURS} hours') WHERE expires_at IS NULL OR expires_at = ''`);
   await ensureColumn("deals", "pipeline", "TEXT NOT NULL DEFAULT 'vendor_sponsors'");
   await ensureColumn("stages", "pipeline", "TEXT NOT NULL DEFAULT 'vendor_sponsors'");
@@ -721,6 +724,7 @@ app.get("/api/vip-invite-codes", async (c) => {
       event_slug: string;
       event_name: string;
       event_date: string;
+      invitee_name: string;
       contact_name: string | null;
       contact_email: string | null;
     }>(
@@ -735,6 +739,7 @@ app.get("/api/vip-invite-codes", async (c) => {
          v.event_slug,
          v.event_name,
          v.event_date,
+         v.invitee_name,
          TRIM(COALESCE(ct.first_name, '') || ' ' || COALESCE(ct.last_name, '')) as contact_name,
          ct.email as contact_email
        FROM vip_invite_codes v
@@ -763,17 +768,19 @@ app.get("/api/vip-invite-codes", async (c) => {
 
 app.post("/api/vip-invite-codes", async (c) => {
   try {
-    const body = await c.req.json<{ count?: number; eventSlug?: string }>().catch((): { count?: number; eventSlug?: string } => ({}));
+    const body = await c.req.json<{ count?: number; eventSlug?: string; inviteeName?: string }>().catch((): { count?: number; eventSlug?: string; inviteeName?: string } => ({}));
     const count = Math.min(100, Math.max(1, Math.floor(Number(body.count || 1))));
     const eventSlug = cleanString(body.eventSlug, 120);
+    const inviteeName = cleanString(body.inviteeName, 200);
     const event = mojoEventBySlug(eventSlug);
     if (!event) return c.json({ error: "Select an event before generating invite links." }, 400);
+    if (!inviteeName) return c.json({ error: "Enter the registrant name before generating invite links." }, 400);
     const links: string[] = [];
     for (let i = 0; i < count; i += 1) {
       const code = await generateVipInviteCode();
       await run(
-        `INSERT INTO vip_invite_codes (code, expires_at, event_slug, event_name, event_date) VALUES (?, datetime('now', '+${VIP_INVITE_EXPIRES_HOURS} hours'), ?, ?, ?)`,
-        [code, event.slug, event.title, event.dateLabel],
+        `INSERT INTO vip_invite_codes (code, expires_at, event_slug, event_name, event_date, invitee_name) VALUES (?, datetime('now', '+${VIP_INVITE_EXPIRES_HOURS} hours'), ?, ?, ?, ?)`,
+        [code, event.slug, event.title, event.dateLabel, inviteeName],
       );
       links.push(vipRegistrationUrl(code, c.req.url));
     }
@@ -808,7 +815,14 @@ app.get("/api/public/vip-invite-codes/:code", async (c) => {
         : "That invite link is invalid or has already been used.";
       return c.json({ ok: false, error: reason }, 404);
     }
-    return c.json({ ok: true, expires_at: row.expires_at, event_slug: row.event_slug, event_name: row.event_name, event_date: row.event_date }, 200);
+    return c.json({
+      ok: true,
+      expires_at: row.expires_at,
+      event_slug: row.event_slug,
+      event_name: row.event_name,
+      event_date: row.event_date,
+      invitee_name: row.invitee_name,
+    }, 200);
   } catch (err: unknown) {
     return c.json({ ok: false, error: (err as Error).message }, 500);
   }
