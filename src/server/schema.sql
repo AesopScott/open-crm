@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS contacts (
   company_id TEXT REFERENCES companies(id) ON DELETE SET NULL,
   title TEXT DEFAULT '',
   status TEXT NOT NULL DEFAULT 'lead',
+  attendee_type TEXT NOT NULL DEFAULT 'guest',
   registration_code TEXT DEFAULT '',
   event_slug TEXT DEFAULT '',
   event_name TEXT DEFAULT '',
@@ -43,7 +44,8 @@ CREATE TABLE IF NOT EXISTS vip_invite_codes (
   event_slug TEXT DEFAULT '',
   event_name TEXT DEFAULT '',
   event_date TEXT DEFAULT '',
-  invitee_name TEXT DEFAULT ''
+  invitee_name TEXT DEFAULT '',
+  attendee_type TEXT NOT NULL DEFAULT 'guest'
 );
 
 CREATE TABLE IF NOT EXISTS deals (

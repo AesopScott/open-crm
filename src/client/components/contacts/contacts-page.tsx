@@ -15,6 +15,7 @@ import { cn } from "@/lib/utils";
 import { pipelineMeta } from "@/lib/pipelines";
 import { CustomFieldDisplay, readCustom } from "@/lib/custom-fields";
 import type { Contact } from "@/types";
+import { attendeeTypeLabel } from "../../../shared/attendee-types";
 
 export function ContactsPage({ navigate }: { navigate: (to: string) => void }) {
   const { contacts, contactsPag, activePipeline, setContactsPage, setContactsSort, setContactsSearch, setContactsFilters, deleteContact, customFields } = useCrm();
@@ -31,6 +32,7 @@ export function ContactsPage({ navigate }: { navigate: (to: string) => void }) {
   ];
   if (isGuestsPipeline) {
     builtInFilterFields.splice(2, 0, { key: "registration_code", label: "Registration code", type: "text" });
+    builtInFilterFields.splice(3, 0, { key: "attendee_type", label: "Attendee type", type: "text" });
   }
   const filterFields = fieldsFromDefs(builtInFilterFields, contactFields);
 
@@ -127,6 +129,9 @@ export function ContactsPage({ navigate }: { navigate: (to: string) => void }) {
                   {isGuestsPipeline && (
                     <SortHeader col="registration_code" pag={contactsPag} onSort={setContactsSort}>Code</SortHeader>
                   )}
+                  {isGuestsPipeline && (
+                    <SortHeader col="attendee_type" pag={contactsPag} onSort={setContactsSort}>Type</SortHeader>
+                  )}
                   <SortHeader col="email" pag={contactsPag} onSort={setContactsSort}>Email</SortHeader>
                   <SortHeader col="phone" pag={contactsPag} onSort={setContactsSort}>Phone</SortHeader>
                   <TableHead>Company</TableHead>
@@ -160,6 +165,11 @@ export function ContactsPage({ navigate }: { navigate: (to: string) => void }) {
                           ) : (
                             <span className="text-muted-foreground">—</span>
                           )}
+                        </TableCell>
+                      )}
+                      {isGuestsPipeline && (
+                        <TableCell>
+                          <CategoryBadge value={attendeeTypeLabel(c.attendee_type)} />
                         </TableCell>
                       )}
                       <TableCell>

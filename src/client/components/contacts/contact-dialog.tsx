@@ -17,6 +17,7 @@ import { api } from "@/api";
 import { CustomFieldsSection, readCustom } from "@/lib/custom-fields";
 import { PIPELINES, DEFAULT_PIPELINE } from "@/lib/pipelines";
 import type { Contact } from "@/types";
+import { ATTENDEE_TYPES } from "../../../shared/attendee-types";
 
 const STATUSES = ["lead", "active", "inactive", "churned"] as const;
 
@@ -33,6 +34,7 @@ interface FormState {
   company_id: string;
   title: string;
   status: string;
+  attendee_type: string;
 }
 
 function toForm(contact: Contact | undefined, defaultPipeline: string): FormState {
@@ -45,6 +47,7 @@ function toForm(contact: Contact | undefined, defaultPipeline: string): FormStat
     company_id: contact?.company_id ?? "",
     title: contact?.title ?? "",
     status: contact?.status || "lead",
+    attendee_type: contact?.attendee_type || "guest",
   };
 }
 
@@ -88,6 +91,7 @@ export function ContactDialog({
         company_id: form.company_id === "" ? null : form.company_id,
         title: form.title.trim(),
         status: form.status,
+        attendee_type: form.attendee_type,
         custom,
       };
       if (contact) await updateContact(contact.id, data);
@@ -195,6 +199,24 @@ export function ContactDialog({
               </SelectContent>
             </Select>
           </div>
+
+          {form.pipeline === "vip_registrants" && (
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="attendee_type">Attendee type</Label>
+              <Select value={form.attendee_type} onValueChange={(v) => set("attendee_type", v)}>
+                <SelectTrigger id="attendee_type" className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {ATTENDEE_TYPES.map((type) => (
+                    <SelectItem key={type.value} value={type.value}>
+                      {type.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
 
           <CustomFieldsSection defs={contactFields} values={custom}
             onChange={(key, v) => setCustom((c) => ({ ...c, [key]: v }))} />

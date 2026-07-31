@@ -11,6 +11,7 @@ import { Separator } from "@/components/ui/separator";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import type { Contact, Activity } from "@/types";
+import { attendeeTypeLabel } from "../../../shared/attendee-types";
 
 type FormKind = "email" | "meeting" | "note";
 
@@ -188,12 +189,18 @@ export function ContactDetail({ id, navigate }: { id: string; navigate: (to: str
             </div>
             <dl className="grid gap-1.5 text-sm">
               {contact.pipeline === "vip_registrants" && (
-                <div className="flex gap-2">
-                  <dt className="w-16 shrink-0 text-muted-foreground">Code</dt>
-                  <dd className="tabular font-semibold">
-                    {contact.registration_code || <span className="text-muted-foreground">—</span>}
-                  </dd>
-                </div>
+                <>
+                  <div className="flex gap-2">
+                    <dt className="w-16 shrink-0 text-muted-foreground">Code</dt>
+                    <dd className="tabular font-semibold">
+                      {contact.registration_code || <span className="text-muted-foreground">—</span>}
+                    </dd>
+                  </div>
+                  <div className="flex gap-2">
+                    <dt className="w-16 shrink-0 text-muted-foreground">Type</dt>
+                    <dd><CategoryBadge value={attendeeTypeLabel(contact.attendee_type)} /></dd>
+                  </div>
+                </>
               )}
               <div className="flex gap-2">
                 <dt className="w-16 shrink-0 text-muted-foreground">Email</dt>

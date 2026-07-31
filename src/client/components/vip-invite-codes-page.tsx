@@ -9,15 +9,17 @@ import { Label } from "@/components/ui/label";
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from "@/components/ui/table";
 import type { VipInviteCode } from "@/types";
 import { MOJO_EVENTS } from "../../shared/mojo-events";
+import { ATTENDEE_TYPES, attendeeTypeLabel } from "../../shared/attendee-types";
 
 export function VipInviteCodesPage() {
   const { inviteCodes, generateInviteCodes, deleteInviteCode, refetchInviteCodes, setError } = useCrm();
   const [count, setCount] = useState(1);
   const [inviteeName, setInviteeName] = useState("");
   const [selectedEventSlug, setSelectedEventSlug] = useState(MOJO_EVENTS[0]?.slug || "");
+  const [selectedAttendeeType, setSelectedAttendeeType] = useState<string>(ATTENDEE_TYPES[0]?.value || "guest");
   const [busy, setBusy] = useState(false);
   const [lastGenerated, setLastGenerated] = useState<string[]>([]);
-  const [lastGeneratedEvent, setLastGeneratedEvent] = useState<{ title: string; dateLabel: string } | null>(null);
+  const [lastGeneratedMeta, setLastGeneratedMeta] = useState<{ eventTitle: string; eventDate: string; attendeeType: string } | null>(null);
 
   const selectedEvent = useMemo(
     () => MOJO_EVENTS.find((event) => event.slug === selectedEventSlug),
@@ -43,9 +45,13 @@ export function VipInviteCodesPage() {
     }
     setBusy(true);
     try {
-      const links = await generateInviteCodes(count, selectedEvent.slug, trimmedInviteeName);
+      const links = await generateInviteCodes(count, selectedEvent.slug, trimmedInviteeName, selectedAttendeeType);
       setLastGenerated(links);
-      setLastGeneratedEvent({ title: selectedEvent.title, dateLabel: selectedEvent.dateLabel });
+      setLastGeneratedMeta({
+        eventTitle: selectedEvent.title,
+        eventDate: selectedEvent.dateLabel,
+        attendeeType: selectedAttendeeType,
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to generate invite links");
     } finally {
@@ -80,7 +86,7 @@ export function VipInviteCodesPage() {
       </PageHeader>
 
       <div className="grid gap-4 border-b border-border p-6">
-        <div className="grid gap-3 md:grid-cols-[10rem_minmax(14rem,0.9fr)_minmax(18rem,1.2fr)_auto] md:items-end">
+        <div className="grid gap-3 lg:grid-cols-[8rem_minmax(12rem,0.8fr)_minmax(16rem,1.15fr)_minmax(12rem,0.75fr)_auto] lg:items-end">
           <div className="grid max-w-sm gap-2">
             <Label htmlFor="invite-code-count">Links to generate</Label>
             <Input
@@ -117,6 +123,21 @@ export function VipInviteCodesPage() {
               ))}
             </select>
           </div>
+          <div className="grid gap-2">
+            <Label htmlFor="attendee-type">Attendee type</Label>
+            <select
+              id="attendee-type"
+              value={selectedAttendeeType}
+              onChange={(event) => setSelectedAttendeeType(event.target.value)}
+              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+            >
+              {ATTENDEE_TYPES.map((type) => (
+                <option key={type.value} value={type.value}>
+                  {type.label}
+                </option>
+              ))}
+            </select>
+          </div>
           <Button onClick={generate} disabled={busy || !selectedEvent || !inviteeName.trim()}>
             <Plus className="size-4" />
             {busy ? "Generating..." : "Generate Guest Link"}
@@ -137,8 +158,10 @@ export function VipInviteCodesPage() {
                 <KeyRound className="size-4 text-[var(--ring)]" />
                 <span className="grid gap-0.5">
                   <span>Newly generated</span>
-                  {lastGeneratedEvent && (
-                    <span className="text-xs font-normal text-muted-foreground">{lastGeneratedEvent.title} - {lastGeneratedEvent.dateLabel}</span>
+                  {lastGeneratedMeta && (
+                    <span className="text-xs font-normal text-muted-foreground">
+                      {lastGeneratedMeta.eventTitle} - {lastGeneratedMeta.eventDate} - {attendeeTypeLabel(lastGeneratedMeta.attendeeType)}
+                    </span>
                   )}
                 </span>
               </div>
@@ -181,6 +204,7 @@ export function VipInviteCodesPage() {
               <TableRow>
                 <TableHead>Registration link</TableHead>
                 <TableHead>Event</TableHead>
+                <TableHead>Attendee type</TableHead>
                 <TableHead>QR code</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Registrant</TableHead>
@@ -209,6 +233,7 @@ export function VipInviteCodesPage() {
                       <span className="text-muted-foreground">Unassigned</span>
                     )}
                   </TableCell>
+                  <TableCell><CategoryBadge value={attendeeTypeLabel(code.attendee_type)} /></TableCell>
                   <TableCell>
                     <InviteQrCode value={code.registration_url} label={`guest-invite-${code.code}`} compact />
                   </TableCell>

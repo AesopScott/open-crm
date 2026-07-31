@@ -3,6 +3,7 @@ import { Avatar, EntityIcon, CategoryBadge } from "@/components/shared";
 import { CustomFieldDisplay, readCustom } from "@/lib/custom-fields";
 import { PreviewPanel, PreviewSection, PreviewField, Empty } from "@/components/preview-panel";
 import type { Contact } from "@/types";
+import { attendeeTypeLabel } from "../../../shared/attendee-types";
 
 export function ContactPreview({
   contact,
@@ -30,9 +31,14 @@ export function ContactPreview({
     >
       <PreviewSection title="Details">
         {contact.pipeline === "vip_registrants" && (
-          <PreviewField label="Registration code">
-            {contact.registration_code ? <span className="tabular font-semibold">{contact.registration_code}</span> : <Empty />}
-          </PreviewField>
+          <>
+            <PreviewField label="Registration code">
+              {contact.registration_code ? <span className="tabular font-semibold">{contact.registration_code}</span> : <Empty />}
+            </PreviewField>
+            <PreviewField label="Attendee type">
+              <CategoryBadge value={attendeeTypeLabel(contact.attendee_type)} />
+            </PreviewField>
+          </>
         )}
         <PreviewField label="Job title">{contact.title || <Empty />}</PreviewField>
         <PreviewField label="Email">

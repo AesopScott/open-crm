@@ -2,6 +2,7 @@ import { createApp, createRoute, z } from "@clawnify/app";
 import freemailDomains from "free-email-domains";
 import { query, get, run } from "./db.js";
 import { mojoEventBySlug } from "../shared/mojo-events.js";
+import { attendeeTypeLabel, normalizeAttendeeType } from "../shared/attendee-types.js";
 import type { CredentialBinding } from "@clawnify/connections";
 import { sendEmail, createMeeting, notifySlack, connectionStatus } from "./integrations.js";
 import {
@@ -223,8 +224,8 @@ function vipRegistrationUrl(code: string, requestUrl: string): string {
   return url.toString();
 }
 
-async function vipInviteCode(code: string): Promise<{ code: string; status: string; contact_id: string | null; expires_at: string; event_slug: string; event_name: string; event_date: string; invitee_name: string } | null> {
-  return (await get<{ code: string; status: string; contact_id: string | null; expires_at: string; event_slug: string; event_name: string; event_date: string; invitee_name: string }>(
+async function vipInviteCode(code: string): Promise<{ code: string; status: string; contact_id: string | null; expires_at: string; event_slug: string; event_name: string; event_date: string; invitee_name: string; attendee_type: string } | null> {
+  return (await get<{ code: string; status: string; contact_id: string | null; expires_at: string; event_slug: string; event_name: string; event_date: string; invitee_name: string; attendee_type: string }>(
     `SELECT
        code,
        CASE WHEN status = 'available' AND expires_at <= datetime('now') THEN 'expired' ELSE status END as status,
@@ -233,7 +234,8 @@ async function vipInviteCode(code: string): Promise<{ code: string; status: stri
        event_slug,
        event_name,
        event_date,
-       invitee_name
+       invitee_name,
+       attendee_type
      FROM vip_invite_codes
      WHERE code = ?`,
     [code],
@@ -293,6 +295,7 @@ const ContactSchema = z.object({
   company_id: z.string().nullable(),
   title: z.string(),
   status: z.string(),
+  attendee_type: z.string().optional(),
   registration_code: z.string().optional(),
   event_slug: z.string().optional(),
   event_name: z.string().optional(),
@@ -392,11 +395,13 @@ async function ensurePipelineSchema(): Promise<void> {
       event_slug TEXT DEFAULT '',
       event_name TEXT DEFAULT '',
       event_date TEXT DEFAULT '',
-      invitee_name TEXT DEFAULT ''
+      invitee_name TEXT DEFAULT '',
+      attendee_type TEXT NOT NULL DEFAULT 'guest'
     )`,
   );
   await ensureColumn("companies", "pipeline", "TEXT NOT NULL DEFAULT 'vendor_sponsors'");
   await ensureColumn("contacts", "pipeline", "TEXT NOT NULL DEFAULT 'vip_registrants'");
+  await ensureColumn("contacts", "attendee_type", "TEXT NOT NULL DEFAULT 'guest'");
   await ensureColumn("contacts", "registration_code", "TEXT DEFAULT ''");
   await ensureColumn("contacts", "event_slug", "TEXT DEFAULT ''");
   await ensureColumn("contacts", "event_name", "TEXT DEFAULT ''");
@@ -406,6 +411,7 @@ async function ensurePipelineSchema(): Promise<void> {
   await ensureColumn("vip_invite_codes", "event_name", "TEXT DEFAULT ''");
   await ensureColumn("vip_invite_codes", "event_date", "TEXT DEFAULT ''");
   await ensureColumn("vip_invite_codes", "invitee_name", "TEXT DEFAULT ''");
+  await ensureColumn("vip_invite_codes", "attendee_type", "TEXT NOT NULL DEFAULT 'guest'");
   await run(`UPDATE vip_invite_codes SET expires_at = datetime(created_at, '+${VIP_INVITE_EXPIRES_HOURS} hours') WHERE expires_at IS NULL OR expires_at = ''`);
   await ensureColumn("deals", "pipeline", "TEXT NOT NULL DEFAULT 'vendor_sponsors'");
   await ensureColumn("stages", "pipeline", "TEXT NOT NULL DEFAULT 'vendor_sponsors'");
@@ -725,6 +731,7 @@ app.get("/api/vip-invite-codes", async (c) => {
       event_name: string;
       event_date: string;
       invitee_name: string;
+      attendee_type: string;
       contact_name: string | null;
       contact_email: string | null;
     }>(
@@ -740,6 +747,7 @@ app.get("/api/vip-invite-codes", async (c) => {
          v.event_name,
          v.event_date,
          v.invitee_name,
+         v.attendee_type,
          TRIM(COALESCE(ct.first_name, '') || ' ' || COALESCE(ct.last_name, '')) as contact_name,
          ct.email as contact_email
        FROM vip_invite_codes v
@@ -768,10 +776,11 @@ app.get("/api/vip-invite-codes", async (c) => {
 
 app.post("/api/vip-invite-codes", async (c) => {
   try {
-    const body = await c.req.json<{ count?: number; eventSlug?: string; inviteeName?: string }>().catch((): { count?: number; eventSlug?: string; inviteeName?: string } => ({}));
+    const body = await c.req.json<{ count?: number; eventSlug?: string; inviteeName?: string; attendeeType?: string }>().catch((): { count?: number; eventSlug?: string; inviteeName?: string; attendeeType?: string } => ({}));
     const count = Math.min(100, Math.max(1, Math.floor(Number(body.count || 1))));
     const eventSlug = cleanString(body.eventSlug, 120);
     const inviteeName = cleanString(body.inviteeName, 200);
+    const attendeeType = normalizeAttendeeType(body.attendeeType);
     const event = mojoEventBySlug(eventSlug);
     if (!event) return c.json({ error: "Select an event before generating invite links." }, 400);
     if (!inviteeName) return c.json({ error: "Enter the registrant name before generating invite links." }, 400);
@@ -779,8 +788,8 @@ app.post("/api/vip-invite-codes", async (c) => {
     for (let i = 0; i < count; i += 1) {
       const code = await generateVipInviteCode();
       await run(
-        `INSERT INTO vip_invite_codes (code, expires_at, event_slug, event_name, event_date, invitee_name) VALUES (?, datetime('now', '+${VIP_INVITE_EXPIRES_HOURS} hours'), ?, ?, ?, ?)`,
-        [code, event.slug, event.title, event.dateLabel, inviteeName],
+        `INSERT INTO vip_invite_codes (code, expires_at, event_slug, event_name, event_date, invitee_name, attendee_type) VALUES (?, datetime('now', '+${VIP_INVITE_EXPIRES_HOURS} hours'), ?, ?, ?, ?, ?)`,
+        [code, event.slug, event.title, event.dateLabel, inviteeName, attendeeType],
       );
       links.push(vipRegistrationUrl(code, c.req.url));
     }
@@ -822,6 +831,8 @@ app.get("/api/public/vip-invite-codes/:code", async (c) => {
       event_name: row.event_name,
       event_date: row.event_date,
       invitee_name: row.invitee_name,
+      attendee_type: row.attendee_type,
+      attendee_type_label: attendeeTypeLabel(row.attendee_type),
     }, 200);
   } catch (err: unknown) {
     return c.json({ ok: false, error: (err as Error).message }, 500);
@@ -867,11 +878,12 @@ const publicGuestRegistrationHandler = async (c: any) => {
 
     const { firstName, lastName } = splitName(name);
     const companyId = await findOrCreateRegistrationCompany(companyName, industry, email);
+    const attendeeType = normalizeAttendeeType(invite.attendee_type);
 
     const id = crypto.randomUUID();
     await run(
-      "INSERT INTO contacts (id, first_name, pipeline, last_name, email, phone, company_id, title, status, registration_code, event_slug, event_name, event_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-      [id, firstName, "vip_registrants", lastName, email, phone, companyId, title, "active", inviteCode, invite.event_slug, invite.event_name, invite.event_date],
+      "INSERT INTO contacts (id, first_name, pipeline, last_name, email, phone, company_id, title, status, attendee_type, registration_code, event_slug, event_name, event_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      [id, firstName, "vip_registrants", lastName, email, phone, companyId, title, "active", attendeeType, inviteCode, invite.event_slug, invite.event_name, invite.event_date],
     );
 
     const update = await run(
@@ -890,13 +902,14 @@ const publicGuestRegistrationHandler = async (c: any) => {
       [
         `Guest registration submitted with invite link ID ${inviteCode}.`,
         invite.event_name ? `Event: ${invite.event_name}${invite.event_date ? ` (${invite.event_date})` : ""}.` : "",
+        `Attendee type: ${attendeeTypeLabel(attendeeType)}.`,
         `Phone verification: ${phoneVerificationStatus}.`,
         isPresenter ? "Role: Presenter." : "",
         isRoundtableLeader ? "Role: Round table leader." : "",
         foodPreferences.length ? `Food preferences: ${foodPreferences.join(", ")}.` : "",
         foodNotes ? `Food notes: ${foodNotes}.` : "",
       ].filter(Boolean).join("\n"),
-      { source: "mojoaisummits.com/vip-registration", inviteCode, eventSlug: invite.event_slug, eventName: invite.event_name, eventDate: invite.event_date },
+      { source: "mojoaisummits.com/vip-registration", inviteCode, attendeeType, eventSlug: invite.event_slug, eventName: invite.event_name, eventDate: invite.event_date },
     );
 
     return c.json({ ok: true, id }, 201);
@@ -959,8 +972,8 @@ app.openapi(listContacts, async (c) => {
     if (search) {
       // Match the contact's own fields OR their company name, so searching a
       // company surfaces its contacts (both queries LEFT JOIN companies as `co`).
-      where.push("(ct.first_name LIKE ? OR ct.last_name LIKE ? OR ct.email LIKE ? OR ct.title LIKE ? OR ct.registration_code LIKE ? OR co.name LIKE ?)");
-      params.push(`%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`);
+      where.push("(ct.first_name LIKE ? OR ct.last_name LIKE ? OR ct.email LIKE ? OR ct.title LIKE ? OR ct.attendee_type LIKE ? OR ct.registration_code LIKE ? OR co.name LIKE ?)");
+      params.push(`%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`);
     }
     if (status) {
       where.push("ct.status = ?");
@@ -1016,6 +1029,7 @@ const createContact = createRoute({
         company_id: z.string().nullable().optional(),
         title: z.string().optional(),
         status: z.string().optional(),
+        attendee_type: z.string().optional(),
         pipeline: z.enum(PIPELINES).optional(),
         custom: CustomValues,
       }).passthrough() } },
@@ -1040,6 +1054,7 @@ app.openapi(createContact, async (c) => {
     const firstName = body.first_name.trim();
     if (!firstName) return c.json({ error: "First name is required" }, 400);
     const pipeline = normalizePipeline(body.pipeline, DEFAULT_CONTACT_PIPELINE);
+    const attendeeType = normalizeAttendeeType(body.attendee_type);
 
     // Link to the chosen company, or infer one from the work-email domain
     // (skips free providers) so a contact never lands orphaned when its email
@@ -1052,8 +1067,8 @@ app.openapi(createContact, async (c) => {
 
     const id = crypto.randomUUID();
     await run(
-      "INSERT INTO contacts (id, first_name, pipeline, last_name, email, phone, company_id, title, status, registration_code) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-      [id, firstName, pipeline, (body.last_name || "").trim(), (body.email || "").trim(), (body.phone || "").trim(), companyId, (body.title || "").trim(), (body.status || "lead").trim(), ""],
+      "INSERT INTO contacts (id, first_name, pipeline, last_name, email, phone, company_id, title, status, attendee_type, registration_code) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      [id, firstName, pipeline, (body.last_name || "").trim(), (body.email || "").trim(), (body.phone || "").trim(), companyId, (body.title || "").trim(), (body.status || "lead").trim(), attendeeType, ""],
     );
 
     await applyCustomValues("contact", "contacts", id, customValues);
@@ -1088,6 +1103,7 @@ const updateContact = createRoute({
         company_id: z.string().nullable().optional(),
         title: z.string().optional(),
         status: z.string().optional(),
+        attendee_type: z.string().optional(),
         pipeline: z.enum(PIPELINES).optional(),
         custom: CustomValues,
       }).passthrough() } },
@@ -1116,10 +1132,16 @@ app.openapi(updateContact, async (c) => {
     const fields: string[] = [];
     const params: unknown[] = [];
 
-    for (const key of ["first_name", "pipeline", "last_name", "email", "phone", "title", "status"] as const) {
+    for (const key of ["first_name", "pipeline", "last_name", "email", "phone", "title", "status", "attendee_type"] as const) {
       if (body[key] !== undefined) {
         fields.push(`${key} = ?`);
-        params.push(key === "pipeline" ? normalizePipeline(body[key], DEFAULT_CONTACT_PIPELINE) : typeof body[key] === "string" ? body[key].trim() : body[key]);
+        params.push(
+          key === "pipeline"
+            ? normalizePipeline(body[key], DEFAULT_CONTACT_PIPELINE)
+            : key === "attendee_type"
+              ? normalizeAttendeeType(body[key])
+              : typeof body[key] === "string" ? body[key].trim() : body[key],
+        );
       }
     }
     if (body.company_id !== undefined) {
@@ -2032,6 +2054,7 @@ app.post("/api/contacts/import", async (c) => {
         phone?: string;
         title?: string;
         status?: string;
+        attendee_type?: string;
         pipeline?: string;
         company?: string;
         company_domain?: string;
@@ -2064,6 +2087,7 @@ app.post("/api/contacts/import", async (c) => {
           phone: (r.phone || "").trim(),
           title: (r.title || "").trim(),
           status: CONTACT_STATUSES.includes((r.status || "").trim()) ? (r.status as string).trim() : "lead",
+          attendee_type: normalizeAttendeeType(r.attendee_type),
           pipeline: normalizePipeline(r.pipeline, importPipeline),
           company,
           company_domain: (r.company_domain || "").trim(),
@@ -2160,7 +2184,7 @@ app.post("/api/contacts/import", async (c) => {
     // Mapped custom-field columns ride along in the same INSERT. Chunk size is
     // derived from the real column count so bound params stay ≤ 100 (D1 cap).
     const custom = await resolveImportCustomColumns("contact", clean);
-    const builtinCols = ["id", "first_name", "pipeline", "last_name", "email", "phone", "company_id", "title", "status", "registration_code"];
+    const builtinCols = ["id", "first_name", "pipeline", "last_name", "email", "phone", "company_id", "title", "status", "attendee_type", "registration_code"];
     const cols = [...builtinCols, ...custom.keys.map(quoteIdent)];
     const rowsPerStmt = Math.max(1, Math.floor(100 / cols.length));
     const rowPlaceholder = `(${cols.map(() => "?").join(", ")})`;
@@ -2175,7 +2199,7 @@ app.post("/api/contacts/import", async (c) => {
           : r.inferDomain
             ? companyIdByDomain.get(`${r.pipeline}:${r.inferDomain}`) ?? null
             : null;
-        params.push(crypto.randomUUID(), r.first_name, r.pipeline, r.last_name, r.email, r.phone, companyId, r.title, r.status, "");
+        params.push(crypto.randomUUID(), r.first_name, r.pipeline, r.last_name, r.email, r.phone, companyId, r.title, r.status, normalizeAttendeeType(r.attendee_type), "");
         for (const k of custom.keys) params.push(coerceForImport(r.custom?.[k], custom.defByKey.get(k)!));
       }
       await run(`INSERT INTO contacts (${cols.join(", ")}) VALUES ${placeholders}`, params);

@@ -53,6 +53,7 @@ export interface Contact {
   company_id: string | null;
   title: string;
   status: string;
+  attendee_type?: string;
   registration_code?: string;
   event_slug?: string;
   event_name?: string;
@@ -79,6 +80,8 @@ export interface VipInviteCode {
   event_name: string;
   event_date: string;
   invitee_name: string;
+  attendee_type: string;
+  attendee_type_label?: string;
 }
 
 export interface Deal {

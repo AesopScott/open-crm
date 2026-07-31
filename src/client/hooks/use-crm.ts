@@ -170,8 +170,8 @@ export function useCrmState(isAgent: boolean): CrmContextValue {
     }
   }, []);
 
-  const generateInviteCodes = useCallback(async (count: number, eventSlug: string, inviteeName: string): Promise<string[]> => {
-    const data = await api<{ links: string[] }>("POST", "/api/vip-invite-codes", { count, eventSlug, inviteeName });
+  const generateInviteCodes = useCallback(async (count: number, eventSlug: string, inviteeName: string, attendeeType: string): Promise<string[]> => {
+    const data = await api<{ links: string[] }>("POST", "/api/vip-invite-codes", { count, eventSlug, inviteeName, attendeeType });
     await refetchInviteCodes();
     return data.links;
   }, [refetchInviteCodes]);
