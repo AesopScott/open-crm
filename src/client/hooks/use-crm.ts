@@ -21,7 +21,7 @@ function pagParams(pag: PaginatedState, pipeline: PipelineKey): URLSearchParams 
 }
 
 export function useCrmState(isAgent: boolean): CrmContextValue {
-  const [stats, setStats] = useState<Stats>({ contacts: 0, companies: 0, deals: 0, dealValue: 0 });
+  const [stats, setStats] = useState<Stats>({ contacts: 0, attendedEvents: 0, companies: 0, deals: 0, dealValue: 0 });
   const [activePipeline, setActivePipeline] = useState<PipelineKey>(DEFAULT_PIPELINE);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -153,8 +153,8 @@ export function useCrmState(isAgent: boolean): CrmContextValue {
 
   const updateContact = useCallback(async (id: string, data: Partial<Contact>) => {
     await api("PUT", `/api/contacts/${id}`, data);
-    await fetchContacts(contactsPag);
-  }, [contactsPag, fetchContacts]);
+    await Promise.all([fetchContacts(contactsPag), fetchStats()]);
+  }, [contactsPag, fetchContacts, fetchStats]);
 
   const deleteContact = useCallback(async (id: string) => {
     await api("DELETE", `/api/contacts/${id}`);

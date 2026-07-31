@@ -200,6 +200,23 @@ export function ContactDetail({ id, navigate }: { id: string; navigate: (to: str
                     <dt className="w-16 shrink-0 text-muted-foreground">Type</dt>
                     <dd><CategoryBadge value={attendeeTypeLabel(contact.attendee_type)} /></dd>
                   </div>
+                  <div className="flex gap-2">
+                    <dt className="w-16 shrink-0 text-muted-foreground">Event</dt>
+                    <dd>
+                      {contact.event_name ? (
+                        <span className="grid gap-0.5">
+                          <span>{contact.event_name}</span>
+                          {contact.event_date && <span className="text-xs text-muted-foreground">{contact.event_date}</span>}
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
+                    </dd>
+                  </div>
+                  <div className="flex gap-2">
+                    <dt className="w-16 shrink-0 text-muted-foreground">Attended</dt>
+                    <dd><CategoryBadge value={Number(contact.attended) === 1 ? "Yes" : "No"} /></dd>
+                  </div>
                 </>
               )}
               <div className="flex gap-2">

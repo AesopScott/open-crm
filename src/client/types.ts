@@ -58,6 +58,7 @@ export interface Contact {
   event_slug?: string;
   event_name?: string;
   event_date?: string;
+  attended?: number;
   company_name?: string | null;
   company_domain?: string | null;
   custom?: Record<string, unknown>; // write payload; on reads, values are flat columns
@@ -118,6 +119,7 @@ export interface StageDef {
 
 export interface Stats {
   contacts: number;
+  attendedEvents: number;
   companies: number;
   deals: number;
   dealValue: number;

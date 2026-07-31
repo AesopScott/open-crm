@@ -144,6 +144,15 @@ function coerceForImport(value: unknown, def: CustomFieldDef): string | number |
   }
 }
 
+function normalizeBooleanFlag(value: unknown): number {
+  if (value === true || value === 1) return 1;
+  if (typeof value === "string") {
+    const raw = value.trim().toLowerCase();
+    return ["1", "true", "yes", "y", "attended", "checked"].includes(raw) ? 1 : 0;
+  }
+  return 0;
+}
+
 /** The custom columns to write for an import: defs whose key is present and
  *  non-empty in at least one row's `custom` bag. Keeps the bulk INSERT narrow. */
 async function resolveImportCustomColumns(
@@ -300,6 +309,7 @@ const ContactSchema = z.object({
   event_slug: z.string().optional(),
   event_name: z.string().optional(),
   event_date: z.string().optional(),
+  attended: z.number().int().optional(),
   company_name: z.string().nullable().optional(),
   company_domain: z.string().nullable().optional(),
   created_at: z.string(),
@@ -406,6 +416,7 @@ async function ensurePipelineSchema(): Promise<void> {
   await ensureColumn("contacts", "event_slug", "TEXT DEFAULT ''");
   await ensureColumn("contacts", "event_name", "TEXT DEFAULT ''");
   await ensureColumn("contacts", "event_date", "TEXT DEFAULT ''");
+  await ensureColumn("contacts", "attended", "INTEGER NOT NULL DEFAULT 0");
   await ensureColumn("vip_invite_codes", "expires_at", "TEXT DEFAULT ''");
   await ensureColumn("vip_invite_codes", "event_slug", "TEXT DEFAULT ''");
   await ensureColumn("vip_invite_codes", "event_name", "TEXT DEFAULT ''");
@@ -441,6 +452,7 @@ const getStats = createRoute({
       description: "Dashboard stats",
       content: { "application/json": { schema: z.object({
         contacts: z.number().int(),
+        attendedEvents: z.number().int(),
         companies: z.number().int(),
         deals: z.number().int(),
         dealValue: z.number(),
@@ -453,11 +465,13 @@ const getStats = createRoute({
 app.openapi(getStats, async (c) => {
   try {
     const contacts = await get<{ count: number }>("SELECT COUNT(*) as count FROM contacts");
+    const attendedEvents = await get<{ count: number }>("SELECT COUNT(*) as count FROM contacts WHERE pipeline = 'vip_registrants' AND attended = 1");
     const companies = await get<{ count: number }>("SELECT COUNT(*) as count FROM companies");
     const deals = await get<{ count: number }>("SELECT COUNT(*) as count FROM deals");
     const dealValue = await get<{ total: number }>("SELECT COALESCE(SUM(value), 0) as total FROM deals WHERE stage NOT IN (SELECT key FROM stages WHERE is_lost = 1)");
     return c.json({
       contacts: contacts?.count || 0,
+      attendedEvents: attendedEvents?.count || 0,
       companies: companies?.count || 0,
       deals: deals?.count || 0,
       dealValue: dealValue?.total || 0,
@@ -972,8 +986,8 @@ app.openapi(listContacts, async (c) => {
     if (search) {
       // Match the contact's own fields OR their company name, so searching a
       // company surfaces its contacts (both queries LEFT JOIN companies as `co`).
-      where.push("(ct.first_name LIKE ? OR ct.last_name LIKE ? OR ct.email LIKE ? OR ct.title LIKE ? OR ct.attendee_type LIKE ? OR ct.registration_code LIKE ? OR co.name LIKE ?)");
-      params.push(`%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`);
+      where.push("(ct.first_name LIKE ? OR ct.last_name LIKE ? OR ct.email LIKE ? OR ct.title LIKE ? OR ct.attendee_type LIKE ? OR ct.registration_code LIKE ? OR ct.event_name LIKE ? OR co.name LIKE ?)");
+      params.push(`%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`);
     }
     if (status) {
       where.push("ct.status = ?");
@@ -1030,6 +1044,7 @@ const createContact = createRoute({
         title: z.string().optional(),
         status: z.string().optional(),
         attendee_type: z.string().optional(),
+        attended: z.number().int().optional(),
         pipeline: z.enum(PIPELINES).optional(),
         custom: CustomValues,
       }).passthrough() } },
@@ -1055,6 +1070,7 @@ app.openapi(createContact, async (c) => {
     if (!firstName) return c.json({ error: "First name is required" }, 400);
     const pipeline = normalizePipeline(body.pipeline, DEFAULT_CONTACT_PIPELINE);
     const attendeeType = normalizeAttendeeType(body.attendee_type);
+    const attended = normalizeBooleanFlag(body.attended);
 
     // Link to the chosen company, or infer one from the work-email domain
     // (skips free providers) so a contact never lands orphaned when its email
@@ -1067,8 +1083,8 @@ app.openapi(createContact, async (c) => {
 
     const id = crypto.randomUUID();
     await run(
-      "INSERT INTO contacts (id, first_name, pipeline, last_name, email, phone, company_id, title, status, attendee_type, registration_code) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-      [id, firstName, pipeline, (body.last_name || "").trim(), (body.email || "").trim(), (body.phone || "").trim(), companyId, (body.title || "").trim(), (body.status || "lead").trim(), attendeeType, ""],
+      "INSERT INTO contacts (id, first_name, pipeline, last_name, email, phone, company_id, title, status, attendee_type, registration_code, attended) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      [id, firstName, pipeline, (body.last_name || "").trim(), (body.email || "").trim(), (body.phone || "").trim(), companyId, (body.title || "").trim(), (body.status || "lead").trim(), attendeeType, "", attended],
     );
 
     await applyCustomValues("contact", "contacts", id, customValues);
@@ -1104,6 +1120,7 @@ const updateContact = createRoute({
         title: z.string().optional(),
         status: z.string().optional(),
         attendee_type: z.string().optional(),
+        attended: z.number().int().optional(),
         pipeline: z.enum(PIPELINES).optional(),
         custom: CustomValues,
       }).passthrough() } },
@@ -1132,7 +1149,7 @@ app.openapi(updateContact, async (c) => {
     const fields: string[] = [];
     const params: unknown[] = [];
 
-    for (const key of ["first_name", "pipeline", "last_name", "email", "phone", "title", "status", "attendee_type"] as const) {
+    for (const key of ["first_name", "pipeline", "last_name", "email", "phone", "title", "status", "attendee_type", "attended"] as const) {
       if (body[key] !== undefined) {
         fields.push(`${key} = ?`);
         params.push(
@@ -1140,6 +1157,8 @@ app.openapi(updateContact, async (c) => {
             ? normalizePipeline(body[key], DEFAULT_CONTACT_PIPELINE)
             : key === "attendee_type"
               ? normalizeAttendeeType(body[key])
+              : key === "attended"
+                ? normalizeBooleanFlag(body[key])
               : typeof body[key] === "string" ? body[key].trim() : body[key],
         );
       }
@@ -2055,6 +2074,7 @@ app.post("/api/contacts/import", async (c) => {
         title?: string;
         status?: string;
         attendee_type?: string;
+        attended?: unknown;
         pipeline?: string;
         company?: string;
         company_domain?: string;
@@ -2088,6 +2108,7 @@ app.post("/api/contacts/import", async (c) => {
           title: (r.title || "").trim(),
           status: CONTACT_STATUSES.includes((r.status || "").trim()) ? (r.status as string).trim() : "lead",
           attendee_type: normalizeAttendeeType(r.attendee_type),
+          attended: normalizeBooleanFlag(r.attended),
           pipeline: normalizePipeline(r.pipeline, importPipeline),
           company,
           company_domain: (r.company_domain || "").trim(),
@@ -2184,7 +2205,7 @@ app.post("/api/contacts/import", async (c) => {
     // Mapped custom-field columns ride along in the same INSERT. Chunk size is
     // derived from the real column count so bound params stay ≤ 100 (D1 cap).
     const custom = await resolveImportCustomColumns("contact", clean);
-    const builtinCols = ["id", "first_name", "pipeline", "last_name", "email", "phone", "company_id", "title", "status", "attendee_type", "registration_code"];
+    const builtinCols = ["id", "first_name", "pipeline", "last_name", "email", "phone", "company_id", "title", "status", "attendee_type", "registration_code", "attended"];
     const cols = [...builtinCols, ...custom.keys.map(quoteIdent)];
     const rowsPerStmt = Math.max(1, Math.floor(100 / cols.length));
     const rowPlaceholder = `(${cols.map(() => "?").join(", ")})`;
@@ -2199,7 +2220,7 @@ app.post("/api/contacts/import", async (c) => {
           : r.inferDomain
             ? companyIdByDomain.get(`${r.pipeline}:${r.inferDomain}`) ?? null
             : null;
-        params.push(crypto.randomUUID(), r.first_name, r.pipeline, r.last_name, r.email, r.phone, companyId, r.title, r.status, normalizeAttendeeType(r.attendee_type), "");
+        params.push(crypto.randomUUID(), r.first_name, r.pipeline, r.last_name, r.email, r.phone, companyId, r.title, r.status, normalizeAttendeeType(r.attendee_type), "", r.attended);
         for (const k of custom.keys) params.push(coerceForImport(r.custom?.[k], custom.defByKey.get(k)!));
       }
       await run(`INSERT INTO contacts (${cols.join(", ")}) VALUES ${placeholders}`, params);

@@ -17,7 +17,7 @@ const SETTINGS_NAV = [
 
 export function Sidebar({ route, navigate }: { route: Route; navigate: (to: string) => void }) {
   const { stats, activePipeline, setActivePipeline } = useCrm();
-  const counts: Record<string, number | undefined> = { contacts: stats.contacts, companies: stats.companies, deals: stats.deals };
+  const counts: Record<string, number | undefined> = { contacts: stats.attendedEvents, companies: stats.companies, deals: stats.deals };
   const activeKey = route.name === "contact" ? "contacts" : route.name;
 
   return (

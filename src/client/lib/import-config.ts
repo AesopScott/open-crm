@@ -38,6 +38,7 @@ export const contactImportConfig: EntityImportConfig = {
     { label: "Company phone", value: "company_phone" },
     { label: "Status", value: "status" },
     { label: "Attendee type", value: "attendee_type" },
+    { label: "Attended", value: "attended" },
   ],
   exact: {
     firstname: "first_name", first: "first_name", givenname: "first_name", forename: "first_name", fname: "first_name",
@@ -52,6 +53,7 @@ export const contactImportConfig: EntityImportConfig = {
     industry: "company_industry", companyindustry: "company_industry", sector: "company_industry", vertical: "company_industry",
     status: "status", stage: "status", lifecyclestage: "status",
     attendeetype: "attendee_type", guesttype: "attendee_type", participanttype: "attendee_type",
+    attended: "attended", attendedevent: "attended",
   },
   fuzzy: [
     [/^(first|given|fore)name/, "first_name"],
@@ -64,6 +66,7 @@ export const contactImportConfig: EntityImportConfig = {
     [/jobtitle|^title$|position/, "title"],
     [/pipeline|audience|segment|group/, "pipeline"],
     [/attendee.*type|guest.*type|participant.*type/, "attendee_type"],
+    [/attended/, "attended"],
   ],
   hasRequired: (m) => m.some((f) => f === "first_name" || f === "full_name"),
   requiredHint: "Map a column to First name or Full name to continue.",

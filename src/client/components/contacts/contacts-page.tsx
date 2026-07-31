@@ -18,7 +18,7 @@ import type { Contact } from "@/types";
 import { attendeeTypeLabel } from "../../../shared/attendee-types";
 
 export function ContactsPage({ navigate }: { navigate: (to: string) => void }) {
-  const { contacts, contactsPag, activePipeline, setContactsPage, setContactsSort, setContactsSearch, setContactsFilters, deleteContact, customFields } = useCrm();
+  const { contacts, contactsPag, activePipeline, setContactsPage, setContactsSort, setContactsSearch, setContactsFilters, updateContact, deleteContact, customFields, setError } = useCrm();
   const pipeline = pipelineMeta(activePipeline);
   const isGuestsPipeline = activePipeline === "vip_registrants";
   const contactFields = customFields.filter((d) => d.entity_type === "contact");
@@ -33,6 +33,8 @@ export function ContactsPage({ navigate }: { navigate: (to: string) => void }) {
   if (isGuestsPipeline) {
     builtInFilterFields.splice(2, 0, { key: "registration_code", label: "Registration code", type: "text" });
     builtInFilterFields.splice(3, 0, { key: "attendee_type", label: "Attendee type", type: "text" });
+    builtInFilterFields.splice(4, 0, { key: "event_name", label: "Event", type: "text" });
+    builtInFilterFields.splice(5, 0, { key: "attended", label: "Attended", type: "text" });
   }
   const filterFields = fieldsFromDefs(builtInFilterFields, contactFields);
 
@@ -43,6 +45,7 @@ export function ContactsPage({ navigate }: { navigate: (to: string) => void }) {
   const [preview, setPreview] = useState<Contact | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Contact | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [attending, setAttending] = useState<string | null>(null);
 
   // Debounce the search box → server-side filter.
   useEffect(() => {
@@ -76,6 +79,17 @@ export function ContactsPage({ navigate }: { navigate: (to: string) => void }) {
       setDeleteTarget(null);
     } finally {
       setDeleting(false);
+    }
+  };
+
+  const toggleAttended = async (contact: Contact, checked: boolean) => {
+    setAttending(contact.id);
+    try {
+      await updateContact(contact.id, { attended: checked ? 1 : 0 });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to update attendance");
+    } finally {
+      setAttending(null);
     }
   };
 
@@ -132,6 +146,9 @@ export function ContactsPage({ navigate }: { navigate: (to: string) => void }) {
                   {isGuestsPipeline && (
                     <SortHeader col="attendee_type" pag={contactsPag} onSort={setContactsSort}>Type</SortHeader>
                   )}
+                  {isGuestsPipeline && (
+                    <SortHeader col="event_name" pag={contactsPag} onSort={setContactsSort}>Event</SortHeader>
+                  )}
                   <SortHeader col="email" pag={contactsPag} onSort={setContactsSort}>Email</SortHeader>
                   <SortHeader col="phone" pag={contactsPag} onSort={setContactsSort}>Phone</SortHeader>
                   <TableHead>Company</TableHead>
@@ -170,6 +187,34 @@ export function ContactsPage({ navigate }: { navigate: (to: string) => void }) {
                       {isGuestsPipeline && (
                         <TableCell>
                           <CategoryBadge value={attendeeTypeLabel(c.attendee_type)} />
+                        </TableCell>
+                      )}
+                      {isGuestsPipeline && (
+                        <TableCell>
+                          <div className="flex min-w-[16rem] items-center justify-between gap-3">
+                            {c.event_name ? (
+                              <span className="grid min-w-0 gap-0.5">
+                                <span className="truncate font-medium text-foreground">{c.event_name}</span>
+                                <span className="truncate text-xs text-muted-foreground">{c.event_date || "Date pending"}</span>
+                              </span>
+                            ) : (
+                              <span className="text-muted-foreground">—</span>
+                            )}
+                            <label
+                              className="inline-flex shrink-0 items-center gap-1.5 text-xs font-medium text-muted-foreground"
+                              onClick={(event) => event.stopPropagation()}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={Number(c.attended) === 1}
+                                disabled={attending === c.id}
+                                onChange={(event) => toggleAttended(c, event.target.checked)}
+                                className="size-4 rounded border-input accent-[var(--ring)]"
+                                aria-label={`Mark ${fullName || "guest"} attended`}
+                              />
+                              Attended
+                            </label>
+                          </div>
                         </TableCell>
                       )}
                       <TableCell>

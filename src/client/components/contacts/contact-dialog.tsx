@@ -35,6 +35,7 @@ interface FormState {
   title: string;
   status: string;
   attendee_type: string;
+  attended: string;
 }
 
 function toForm(contact: Contact | undefined, defaultPipeline: string): FormState {
@@ -48,6 +49,7 @@ function toForm(contact: Contact | undefined, defaultPipeline: string): FormStat
     title: contact?.title ?? "",
     status: contact?.status || "lead",
     attendee_type: contact?.attendee_type || "guest",
+    attended: Number(contact?.attended) === 1 ? "1" : "0",
   };
 }
 
@@ -92,6 +94,7 @@ export function ContactDialog({
         title: form.title.trim(),
         status: form.status,
         attendee_type: form.attendee_type,
+        attended: form.attended === "1" ? 1 : 0,
         custom,
       };
       if (contact) await updateContact(contact.id, data);
@@ -201,21 +204,33 @@ export function ContactDialog({
           </div>
 
           {form.pipeline === "vip_registrants" && (
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="attendee_type">Attendee type</Label>
-              <Select value={form.attendee_type} onValueChange={(v) => set("attendee_type", v)}>
-                <SelectTrigger id="attendee_type" className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {ATTENDEE_TYPES.map((type) => (
-                    <SelectItem key={type.value} value={type.value}>
-                      {type.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+            <>
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="attendee_type">Attendee type</Label>
+                <Select value={form.attendee_type} onValueChange={(v) => set("attendee_type", v)}>
+                  <SelectTrigger id="attendee_type" className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {ATTENDEE_TYPES.map((type) => (
+                      <SelectItem key={type.value} value={type.value}>
+                        {type.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={form.attended === "1"}
+                  onChange={(event) => set("attended", event.target.checked ? "1" : "0")}
+                  className="size-4 rounded border-input accent-[var(--ring)]"
+                />
+                Attended
+              </label>
+            </>
           )}
 
           <CustomFieldsSection defs={contactFields} values={custom}

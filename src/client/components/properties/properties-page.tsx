@@ -59,6 +59,8 @@ const BUILTINS: Record<EntityType, BuiltinAttr[]> = {
     { label: "Status", key: "status", type: "Status", icon: CircleDot, constraints: "Required" },
     { label: "Attendee type", key: "attendee_type", type: "Enumeration", icon: List, constraints: "Guest links" },
     { label: "Registration code", key: "registration_code", type: "Text", icon: TypeIcon, constraints: "System generated" },
+    { label: "Event name", key: "event_name", type: "Text", icon: Calendar, constraints: "Guest links" },
+    { label: "Attended", key: "attended", type: "Boolean", icon: CircleDot, constraints: "Manual checkbox" },
     { label: "Created at", key: "created_at", type: "Timestamp", icon: Calendar },
   ],
   company: [

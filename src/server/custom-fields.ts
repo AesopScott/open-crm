@@ -61,7 +61,7 @@ export function isEntityType(v: string): v is EntityType {
 // schema-sync can never add/drop a platform column.
 const BUILTIN_COLUMNS: Record<EntityType, ReadonlySet<string>> = {
   company: new Set(["id", "name", "pipeline", "domain", "industry", "phone", "email", "notes", "created_at", "updated_at"]),
-  contact: new Set(["id", "first_name", "pipeline", "last_name", "email", "phone", "company_id", "title", "status", "attendee_type", "registration_code", "event_slug", "event_name", "event_date", "created_at", "updated_at"]),
+  contact: new Set(["id", "first_name", "pipeline", "last_name", "email", "phone", "company_id", "title", "status", "attendee_type", "registration_code", "event_slug", "event_name", "event_date", "attended", "created_at", "updated_at"]),
   deal: new Set(["id", "name", "pipeline", "contact_id", "value", "stage", "close_date", "notes", "created_at", "updated_at"]),
 };
 

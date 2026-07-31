@@ -38,6 +38,17 @@ export function ContactPreview({
             <PreviewField label="Attendee type">
               <CategoryBadge value={attendeeTypeLabel(contact.attendee_type)} />
             </PreviewField>
+            <PreviewField label="Event">
+              {contact.event_name ? (
+                <span className="grid gap-0.5">
+                  <span>{contact.event_name}</span>
+                  {contact.event_date && <span className="text-xs text-muted-foreground">{contact.event_date}</span>}
+                </span>
+              ) : <Empty />}
+            </PreviewField>
+            <PreviewField label="Attended">
+              <CategoryBadge value={Number(contact.attended) === 1 ? "Yes" : "No"} />
+            </PreviewField>
           </>
         )}
         <PreviewField label="Job title">{contact.title || <Empty />}</PreviewField>

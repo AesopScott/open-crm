@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS contacts (
   event_slug TEXT DEFAULT '',
   event_name TEXT DEFAULT '',
   event_date TEXT DEFAULT '',
+  attended INTEGER NOT NULL DEFAULT 0,
   created_at TEXT DEFAULT (datetime('now')),
   updated_at TEXT DEFAULT (datetime('now'))
 );
