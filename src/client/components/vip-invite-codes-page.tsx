@@ -6,7 +6,6 @@ import { PageHeader, CategoryBadge, EmptyState } from "@/components/shared";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from "@/components/ui/table";
 import type { VipInviteCode } from "@/types";
 import { MOJO_EVENTS } from "../../shared/mojo-events";
@@ -75,22 +74,7 @@ export function VipInviteCodesPage() {
       </PageHeader>
 
       <div className="grid gap-4 border-b border-border p-6">
-        <div className="grid gap-3 md:grid-cols-[minmax(16rem,1fr)_10rem_auto] md:items-end">
-          <div className="grid gap-2">
-            <Label htmlFor="invite-event">Event</Label>
-            <Select value={selectedEventSlug} onValueChange={setSelectedEventSlug}>
-              <SelectTrigger id="invite-event">
-                <SelectValue placeholder="Select event" />
-              </SelectTrigger>
-              <SelectContent>
-                {MOJO_EVENTS.map((event) => (
-                  <SelectItem key={event.slug} value={event.slug}>
-                    {event.title} - {event.dateLabel}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+        <div className="grid gap-3 md:grid-cols-[10rem_minmax(18rem,1fr)_auto] md:items-end">
           <div className="grid max-w-sm gap-2">
             <Label htmlFor="invite-code-count">Links to generate</Label>
             <Input
@@ -102,9 +86,24 @@ export function VipInviteCodesPage() {
               onChange={(event) => setCount(Math.min(100, Math.max(1, Number(event.target.value) || 1)))}
             />
           </div>
+          <div className="grid gap-2">
+            <Label htmlFor="invite-event">Event for guest link</Label>
+            <select
+              id="invite-event"
+              value={selectedEventSlug}
+              onChange={(event) => setSelectedEventSlug(event.target.value)}
+              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+            >
+              {MOJO_EVENTS.map((event) => (
+                <option key={event.slug} value={event.slug}>
+                  {event.title} - {event.dateLabel}
+                </option>
+              ))}
+            </select>
+          </div>
           <Button onClick={generate} disabled={busy || !selectedEvent}>
             <Plus className="size-4" />
-            {busy ? "Generating..." : "Generate links"}
+            {busy ? "Generating..." : "Generate Guest Link"}
           </Button>
         </div>
 
