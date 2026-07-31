@@ -3,14 +3,6 @@ main = "src/server/index.ts"
 compatibility_date = "2026-07-27"
 compatibility_flags = ["nodejs_compat"]
 
-[[routes]]
-pattern = "mojoaisummits.com/crm"
-zone_name = "mojoaisummits.com"
-
-[[routes]]
-pattern = "mojoaisummits.com/crm/*"
-zone_name = "mojoaisummits.com"
-
 [assets]
 directory = "./dist"
 binding = "ASSETS"
