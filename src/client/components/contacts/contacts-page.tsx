@@ -19,7 +19,7 @@ import type { Contact } from "@/types";
 export function ContactsPage({ navigate }: { navigate: (to: string) => void }) {
   const { contacts, contactsPag, activePipeline, setContactsPage, setContactsSort, setContactsSearch, setContactsFilters, deleteContact, customFields } = useCrm();
   const pipeline = pipelineMeta(activePipeline);
-  const showRegistrationCode = activePipeline === "vip_registrants";
+  const isGuestsPipeline = activePipeline === "vip_registrants";
   const contactFields = customFields.filter((d) => d.entity_type === "contact");
   const builtInFilterFields: FilterField[] = [
     { key: "first_name", label: "First name", type: "text" },
@@ -29,7 +29,7 @@ export function ContactsPage({ navigate }: { navigate: (to: string) => void }) {
     { key: "title", label: "Title", type: "text" },
     { key: "status", label: "Status", type: "text" },
   ];
-  if (showRegistrationCode) {
+  if (isGuestsPipeline) {
     builtInFilterFields.splice(2, 0, { key: "registration_code", label: "Registration code", type: "text" });
   }
   const filterFields = fieldsFromDefs(builtInFilterFields, contactFields);
@@ -59,12 +59,12 @@ export function ContactsPage({ navigate }: { navigate: (to: string) => void }) {
 
   const totalPages = Math.max(1, Math.ceil(contactsPag.total / contactsPag.limit));
 
-  const addButton = (
-    <Button size="sm" onClick={showRegistrationCode ? () => navigate("/invite-codes") : openCreate}>
+  const addButton = !isGuestsPipeline ? (
+    <Button size="sm" onClick={openCreate}>
       <Plus className="size-4" />
-      {showRegistrationCode ? "Generate invite link" : "Add contact"}
+      Add contact
     </Button>
-  );
+  ) : null;
 
   const confirmDelete = async () => {
     if (!deleteTarget) return;
@@ -91,7 +91,7 @@ export function ContactsPage({ navigate }: { navigate: (to: string) => void }) {
           />
         </div>
         <TableFilter fields={filterFields} filters={contactsPag.filters} onChange={setContactsFilters} />
-        {!showRegistrationCode && (
+        {!isGuestsPipeline && (
           <Button size="sm" variant="outline" onClick={() => setImportOpen(true)}>
             <Upload className="size-4" />
             Import
@@ -102,10 +102,10 @@ export function ContactsPage({ navigate }: { navigate: (to: string) => void }) {
 
       {contacts.length === 0 ? (
         <EmptyState
-          title={showRegistrationCode
-            ? "No guests yet. Generate an invite link before sending someone to registration."
+          title={isGuestsPipeline
+            ? "No registered guests yet. Submitted registration details will appear here."
             : `No ${pipeline.contactLabel.toLowerCase()}s yet. Add your first, or import a CSV.`}
-          action={
+          action={!isGuestsPipeline && (
             <div className="flex flex-col items-center gap-2">
               {addButton}
               <button
@@ -115,7 +115,7 @@ export function ContactsPage({ navigate }: { navigate: (to: string) => void }) {
                 Set up properties
               </button>
             </div>
-          }
+          )}
         />
       ) : (
         <div className="flex min-h-0 flex-1 flex-col">
@@ -124,7 +124,7 @@ export function ContactsPage({ navigate }: { navigate: (to: string) => void }) {
               <TableHeader>
                 <TableRow>
                   <SortHeader col="first_name" pag={contactsPag} onSort={setContactsSort}>Name</SortHeader>
-                  {showRegistrationCode && (
+                  {isGuestsPipeline && (
                     <SortHeader col="registration_code" pag={contactsPag} onSort={setContactsSort}>Code</SortHeader>
                   )}
                   <SortHeader col="email" pag={contactsPag} onSort={setContactsSort}>Email</SortHeader>
@@ -153,7 +153,7 @@ export function ContactsPage({ navigate }: { navigate: (to: string) => void }) {
                           <span className="truncate">{fullName || "—"}</span>
                         </button>
                       </TableCell>
-                      {showRegistrationCode && (
+                      {isGuestsPipeline && (
                         <TableCell>
                           {c.registration_code ? (
                             <span className="tabular font-semibold text-foreground">{c.registration_code}</span>

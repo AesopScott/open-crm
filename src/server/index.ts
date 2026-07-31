@@ -2306,6 +2306,7 @@ app.delete("/api/custom-fields/:id", async (c) => {
 });
 
 const CRM_BASE_PATH = "/crm";
+const CRM_APP_SHELL_VERSION = "20260731-guest-records";
 
 function stripCrmBase(request: Request): Request {
   const url = new URL(request.url);
@@ -2317,8 +2318,28 @@ function stripCrmBase(request: Request): Request {
   return new Request(url.toString(), request);
 }
 
+function crmAssetRequest(request: Request): { request: Request; appShell: boolean } {
+  const stripped = stripCrmBase(request);
+  const url = new URL(stripped.url);
+  const appShell = !url.pathname.startsWith("/assets/") && !/\.[a-z0-9]+$/i.test(url.pathname);
+  if (appShell) {
+    url.searchParams.set("__crm_shell", CRM_APP_SHELL_VERSION);
+  }
+  return { request: new Request(url.toString(), stripped), appShell };
+}
+
+function withAppShellCacheHeaders(response: Response): Response {
+  const headers = new Headers(response.headers);
+  headers.set("Cache-Control", "no-store, max-age=0");
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
+
 export default {
-  fetch(request, env, ctx) {
+  async fetch(request, env, ctx) {
     const url = new URL(request.url);
 
     if (url.pathname === CRM_BASE_PATH) {
@@ -2331,7 +2352,9 @@ export default {
     }
 
     if (url.pathname.startsWith(`${CRM_BASE_PATH}/`)) {
-      return env.ASSETS.fetch(stripCrmBase(request));
+      const asset = crmAssetRequest(request);
+      const response = await env.ASSETS.fetch(asset.request);
+      return asset.appShell ? withAppShellCacheHeaders(response) : response;
     }
 
     return new Response("Not found", { status: 404 });
